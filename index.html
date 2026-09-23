@@ -1,0 +1,609 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
+<title>Earn App</title>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<!-- Ad network IDs/links are no longer hardcoded here - they are all
+     set from admin.html and loaded from Firestore at startup. -->
+
+<style>
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; font-family: -apple-system, Roboto, Arial, sans-serif;
+    background: #0f0f14; color: #fff; padding-bottom: 70px;
+  }
+  .hidden { display: none !important; }
+  .card { background: #1a1a22; border-radius: 14px; padding: 14px 16px; }
+  .btn {
+    width: 100%; border: none; border-radius: 12px; padding: 13px;
+    font-size: 14px; font-weight: 600; cursor: pointer;
+  }
+  .btn-primary { background: #6b5ce7; color: #fff; }
+  .btn-secondary { background: #24242e; color: #fff; }
+  .btn:disabled { opacity: 0.4; }
+  input {
+    width: 100%; padding: 11px 12px; border-radius: 10px; border: 1px solid #2c2c38;
+    background: #1a1a22; color: #fff; font-size: 14px;
+  }
+  #topbar { display: flex; align-items: center; justify-content: space-between; padding: 16px; }
+  #balanceCard { margin: 0 16px 14px; border-radius: 14px; padding: 16px; background: #6b5ce7; }
+  #tasksGrid { display: grid; grid-template-columns: repeat(2,1fr); gap: 10px; padding: 0 16px 16px; }
+  .taskTile { background: #1a1a22; border-radius: 14px; padding: 16px 10px; text-align: center; }
+  .taskTile .icon { font-size: 26px; margin-bottom: 6px; }
+  #bottomNav {
+    position: fixed; bottom: 0; left: 0; right: 0; display: flex; justify-content: space-around;
+    background: #15151c; padding: 10px 0; border-top: 1px solid #24242e;
+  }
+  .navItem { text-align: center; font-size: 10px; color: #777; cursor: pointer; }
+  .navItem.active { color: #6b5ce7; }
+  .navItem .icon { font-size: 20px; }
+  .listRow { display: flex; align-items: center; justify-content: space-between; padding: 10px 0; border-bottom: 1px solid #24242e; }
+  #adOverlay {
+    position: fixed; inset: 0; background: rgba(0,0,0,0.8); display: flex;
+    align-items: center; justify-content: center; z-index: 999;
+  }
+  #adOverlay .box { background: #1a1a22; border-radius: 16px; padding: 16px; width: 85%; max-width: 300px; text-align: center; }
+</style>
+</head>
+<body>
+
+<div id="app"></div>
+
+<div id="bottomNav">
+  <div class="navItem" data-view="home"><div class="icon">🏠</div>Home</div>
+  <div class="navItem" data-view="refer"><div class="icon">👥</div>Refer</div>
+  <div class="navItem" data-view="withdraw"><div class="icon">💳</div>Withdraw</div>
+  <div class="navItem" data-view="history"><div class="icon">🕘</div>History</div>
+</div>
+
+<!-- Firebase (gstatic, fixed version, for a coherent SDK build) -->
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-app.js";
+import {
+  getFirestore, doc, getDoc, setDoc, updateDoc, increment, addDoc,
+  collection, query, where, orderBy, limit, getDocs, serverTimestamp
+} from "https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js";
+
+// ===================== FIREBASE CONFIG =====================
+// Paste your Firebase project config here (Project settings -> General -> Your apps)
+const firebaseConfig = {
+  apiKey: "YOUR_API_KEY",
+  authDomain: "YOUR_PROJECT.firebaseapp.com",
+  projectId: "YOUR_PROJECT_ID",
+  storageBucket: "YOUR_PROJECT.appspot.com",
+  messagingSenderId: "YOUR_SENDER_ID",
+  appId: "YOUR_APP_ID"
+};
+// =============================================================
+
+const fbApp = initializeApp(firebaseConfig);
+const db = getFirestore(fbApp);
+
+const tg = window.Telegram?.WebApp;
+tg?.ready();
+tg?.expand();
+
+const tgUser = tg?.initDataUnsafe?.user || { id: "demo123", first_name: "Guest", username: "guest" };
+const uid = String(tgUser.id);
+const todayKey = () => new Date().toISOString().slice(0, 10);
+
+// ------------- default settings (overridden by Firestore config/settings) -------------
+let CFG = {
+  adReward: 0.003, surveyReward: 0.015, mathReward: 0.005, quizReward: 0.004,
+  spinRewards: [0.002, 0.004, 0.006, 0.010, 0.003, 0.005],
+  scratchRewards: [0.005, 0.010, 0.015],
+  checkinRewards: [0.002, 0.003, 0.004, 0.006, 0.008, 0.010, 0.015],
+  dailyAdLimit: 20, dailySpinLimit: 3, dailyScratchLimit: 2,
+  dailySurveyLimit: 2, dailyQuizLimit: 10,
+  referralBonus: 0.020, minWithdraw: 1.000,
+  autoAdIntervalSec: 120,
+  surveyLink: "https://your-adsterra-or-gigapub-direct-link.com",
+  monetagZoneId: "",
+  withdrawRequiredTasks: { ads: 5, checkin: true, surveys: 1, quiz: 3 }
+};
+
+let monetagFn = null; // filled in after the SDK loads with the zone ID from admin settings
+
+// Dynamically loads the Monetag SDK using the zone ID set in admin.html.
+// Nothing is hardcoded in this file - change the zone ID from the admin
+// panel any time and it takes effect on the next app load.
+function loadMonetagSDK(zoneId) {
+  return new Promise((resolve) => {
+    if (!zoneId) return resolve(false);
+    const fnName = "show_" + zoneId;
+    const s = document.createElement("script");
+    s.src = "//libtl.com/sdk.js";
+    s.dataset.zone = zoneId;
+    s.dataset.sdk = fnName;
+    s.onload = () => { monetagFn = fnName; resolve(true); };
+    s.onerror = () => resolve(false);
+    document.head.appendChild(s);
+  });
+}
+
+let USER = null;
+let PROGRESS = null;
+
+async function loadConfig() {
+  const snap = await getDoc(doc(db, "config", "settings"));
+  if (snap.exists()) CFG = { ...CFG, ...snap.data() };
+}
+
+async function loadUser() {
+  const ref = doc(db, "users", uid);
+  const snap = await getDoc(ref);
+  if (snap.exists()) {
+    USER = snap.data();
+  } else {
+    const startParam = tg?.initDataUnsafe?.start_param || null;
+    USER = {
+      telegramId: uid, firstName: tgUser.first_name || "", username: tgUser.username || "",
+      balance: 0, referredBy: startParam && startParam !== uid ? startParam : null,
+      referralCount: 0, createdAt: serverTimestamp()
+    };
+    await setDoc(ref, USER);
+    if (USER.referredBy) {
+      const refRef = doc(db, "users", USER.referredBy);
+      const refSnap = await getDoc(refRef);
+      if (refSnap.exists()) {
+        await updateDoc(refRef, {
+          balance: increment(CFG.referralBonus),
+          referralCount: increment(1)
+        });
+        await addTx(USER.referredBy, "referral", CFG.referralBonus, "New referral joined");
+      }
+    }
+  }
+}
+
+async function loadProgress() {
+  const ref = doc(db, "progress", uid + "_" + todayKey());
+  const snap = await getDoc(ref);
+  if (snap.exists()) {
+    PROGRESS = snap.data();
+  } else {
+    PROGRESS = { ads: 0, spins: 0, scratches: 0, surveys: 0, quiz: 0, checkin: false };
+    await setDoc(ref, PROGRESS);
+  }
+}
+
+async function saveProgress(field, valueOrIncrement) {
+  PROGRESS[field] = valueOrIncrement;
+  const ref = doc(db, "progress", uid + "_" + todayKey());
+  await updateDoc(ref, { [field]: valueOrIncrement });
+}
+
+async function addBalance(amount) {
+  USER.balance = (USER.balance || 0) + amount;
+  await updateDoc(doc(db, "users", uid), { balance: increment(amount) });
+}
+
+async function addTx(forUid, type, amount, note) {
+  await addDoc(collection(db, "transactions"), {
+    telegramId: forUid, type, amount, note, createdAt: serverTimestamp()
+  });
+}
+
+function fmt(n) { return Number(n || 0).toFixed(3); }
+
+// ------------- rewarded ad trigger (Monetag) -------------
+function showRewardedAd() {
+  return new Promise((resolve) => {
+    if (monetagFn && typeof window[monetagFn] === "function") {
+      window[monetagFn]().then(() => resolve(true)).catch(() => resolve(false));
+    } else {
+      // Monetag zone ID not set in admin.html yet - fallback so the flow can still be tested
+      alert("Ad network is not set up yet - add your Monetag zone ID in the admin panel.");
+      resolve(true);
+    }
+  });
+}
+
+// ------------- auto interstitial popup (no reward) -------------
+function startAutoAdLoop() {
+  setInterval(() => {
+    if (monetagFn && typeof window[monetagFn] === "function") {
+      window[monetagFn]("pop");
+    }
+  }, (CFG.autoAdIntervalSec || 120) * 1000);
+}
+
+// ===================== VIEWS =====================
+const app = document.getElementById("app");
+
+function renderHome() {
+  const adDone = PROGRESS.ads >= CFG.dailyAdLimit;
+  app.innerHTML = `
+    <div id="topbar">
+      <div style="display:flex;align-items:center;gap:8px;">
+        <div style="width:32px;height:32px;border-radius:50%;background:#6b5ce7;display:flex;align-items:center;justify-content:center;font-weight:600;">${(USER.firstName||"U")[0]}</div>
+        <span>${USER.firstName || "User"}</span>
+      </div>
+    </div>
+    <div id="balanceCard">
+      <div style="font-size:12px;opacity:0.85;">Your balance</div>
+      <div style="font-size:24px;font-weight:600;">${fmt(USER.balance)} <span style="font-size:13px;">USDT</span></div>
+    </div>
+    <div style="padding:0 16px 8px;">
+      <button class="btn btn-primary" id="watchAdBtn" ${adDone ? "disabled" : ""}>
+        ${adDone ? "Daily ad limit reached" : "Watch ad and earn"}
+      </button>
+    </div>
+    <p style="padding:12px 16px 8px;font-size:12px;color:#999;">More ways to earn</p>
+    <div id="tasksGrid">
+      <div class="taskTile" data-view="survey"><div class="icon">📋</div>Survey</div>
+      <div class="taskTile" data-view="spin"><div class="icon">🎡</div>Spin & earn</div>
+      <div class="taskTile" data-view="checkin"><div class="icon">📅</div>Daily check-in</div>
+      <div class="taskTile" data-view="scratch"><div class="icon">🎫</div>Scratch card</div>
+      <div class="taskTile" data-view="math"><div class="icon">🧮</div>Math challenge</div>
+      <div class="taskTile" data-view="quiz"><div class="icon">❓</div>Quiz</div>
+    </div>
+  `;
+  document.getElementById("watchAdBtn")?.addEventListener("click", async () => {
+    if (PROGRESS.ads >= CFG.dailyAdLimit) return;
+    const ok = await showRewardedAd();
+    if (ok) {
+      await addBalance(CFG.adReward);
+      await saveProgress("ads", PROGRESS.ads + 1);
+      await addTx(uid, "ad", CFG.adReward, "Watched ad");
+      renderHome();
+    }
+  });
+  document.querySelectorAll(".taskTile").forEach(el =>
+    el.addEventListener("click", () => navigate(el.dataset.view))
+  );
+}
+
+function renderSurvey() {
+  const usedUp = PROGRESS.surveys >= CFG.dailySurveyLimit;
+  app.innerHTML = `
+    <div id="topbar"><span>← Survey</span></div>
+    <div style="padding:0 16px 14px;text-align:center;">
+      <div style="font-size:22px;">📋</div>
+      <div style="font-size:18px;font-weight:600;margin-top:6px;">${fmt(CFG.surveyReward)} USDT</div>
+      <div style="font-size:12px;color:#999;">Reward after admin approval</div>
+      <div style="font-size:12px;color:#e0a72c;margin-top:4px;">${PROGRESS.surveys} of ${CFG.dailySurveyLimit} submissions used today</div>
+    </div>
+    <div class="card" style="margin:0 16px 14px;font-size:13px;line-height:1.6;">
+      1. Tap "Open link" below.<br>
+      2. Create an account on that site with your number.<br>
+      3. Enter that same number below and submit.<br>
+      4. Admin verifies and approves within 24 hours.
+    </div>
+    <div style="padding:0 16px 10px;">
+      <button class="btn btn-primary" id="openLinkBtn">Open link</button>
+    </div>
+    <div style="padding:0 16px 10px;">
+      <input id="numInput" placeholder="e.g. 01712345678" />
+    </div>
+    <div style="padding:0 16px 16px;">
+      <button class="btn btn-secondary" id="submitBtn" ${usedUp ? "disabled" : ""}>
+        ${usedUp ? "Daily limit reached" : "Submit for review"}
+      </button>
+    </div>
+  `;
+  document.getElementById("openLinkBtn").addEventListener("click", () => {
+    tg?.openLink ? tg.openLink(CFG.surveyLink) : window.open(CFG.surveyLink, "_blank");
+  });
+  document.getElementById("submitBtn")?.addEventListener("click", async () => {
+    const num = document.getElementById("numInput").value.trim();
+    if (!num) return alert("Enter the number you signed up with first.");
+    await addDoc(collection(db, "surveySubmissions"), {
+      telegramId: uid, accountNumber: num, status: "pending", submittedAt: serverTimestamp()
+    });
+    await saveProgress("surveys", PROGRESS.surveys + 1);
+    alert("Submitted for review.");
+    renderSurvey();
+  });
+}
+
+function renderSpin() {
+  const usedUp = PROGRESS.spins >= CFG.dailySpinLimit;
+  app.innerHTML = `
+    <div id="topbar"><span>← Spin & earn</span></div>
+    <div style="padding:0 16px;text-align:right;font-size:12px;color:#e0a72c;">${PROGRESS.spins} of ${CFG.dailySpinLimit} spins used</div>
+    <div style="padding:16px;text-align:center;">
+      <div style="font-size:60px;">🎡</div>
+      <button class="btn btn-primary" id="spinBtn" style="margin-top:16px;" ${usedUp ? "disabled" : ""}>
+        ${usedUp ? "No spins left today" : "Spin now"}
+      </button>
+      <div id="spinResult"></div>
+    </div>
+  `;
+  document.getElementById("spinBtn")?.addEventListener("click", async () => {
+    const reward = CFG.spinRewards[Math.floor(Math.random() * CFG.spinRewards.length)];
+    document.getElementById("spinResult").innerHTML = `
+      <div class="card" style="margin-top:14px;">
+        <div style="font-size:12px;color:#999;">You landed on</div>
+        <div style="font-size:18px;font-weight:600;">${fmt(reward)} USDT</div>
+      </div>
+      <button class="btn btn-primary" id="claimSpinBtn" style="margin-top:12px;">Watch ad to claim</button>
+    `;
+    document.getElementById("claimSpinBtn").addEventListener("click", async () => {
+      const ok = await showRewardedAd();
+      if (ok) {
+        await addBalance(reward);
+        await saveProgress("spins", PROGRESS.spins + 1);
+        await addTx(uid, "spin", reward, "Spin reward");
+        renderSpin();
+      }
+    });
+  });
+}
+
+function renderScratch() {
+  const usedUp = PROGRESS.scratches >= CFG.dailyScratchLimit;
+  app.innerHTML = `
+    <div id="topbar"><span>← Scratch card</span></div>
+    <div style="padding:0 16px;text-align:right;font-size:12px;color:#e0a72c;">${PROGRESS.scratches} of ${CFG.dailyScratchLimit} cards used</div>
+    <div style="padding:16px;">
+      <div class="card" id="scratchCard" style="text-align:center;padding:30px;cursor:pointer;">
+        ${usedUp ? "No cards left today" : "Tap to scratch"}
+      </div>
+      <div id="scratchResult"></div>
+    </div>
+  `;
+  if (!usedUp) {
+    document.getElementById("scratchCard").addEventListener("click", async function handler() {
+      const reward = CFG.scratchRewards[Math.floor(Math.random() * CFG.scratchRewards.length)];
+      this.textContent = "You won " + fmt(reward) + " USDT";
+      document.getElementById("scratchResult").innerHTML =
+        `<button class="btn btn-primary" id="claimScratchBtn" style="margin-top:12px;">Watch ad to claim</button>`;
+      document.getElementById("claimScratchBtn").addEventListener("click", async () => {
+        const ok = await showRewardedAd();
+        if (ok) {
+          await addBalance(reward);
+          await saveProgress("scratches", PROGRESS.scratches + 1);
+          await addTx(uid, "scratch", reward, "Scratch card reward");
+          renderScratch();
+        }
+      });
+    }, { once: true });
+  }
+}
+
+function renderCheckin() {
+  const day = Math.min(PROGRESS.checkinStreak || 1, 7);
+  const reward = CFG.checkinRewards[day - 1] || CFG.checkinRewards[0];
+  app.innerHTML = `
+    <div id="topbar"><span>← Daily check-in</span></div>
+    <div style="padding:16px;">
+      <div class="card" style="text-align:center;">
+        <div style="font-size:12px;color:#999;">Day ${day} reward</div>
+        <div style="font-size:18px;font-weight:600;">${fmt(reward)} USDT</div>
+      </div>
+      <button class="btn btn-primary" id="checkinBtn" style="margin-top:14px;" ${PROGRESS.checkin ? "disabled" : ""}>
+        ${PROGRESS.checkin ? "Already checked in today" : "Watch ad to claim"}
+      </button>
+    </div>
+  `;
+  document.getElementById("checkinBtn")?.addEventListener("click", async () => {
+    const ok = await showRewardedAd();
+    if (ok) {
+      await addBalance(reward);
+      await saveProgress("checkin", true);
+      await addTx(uid, "checkin", reward, "Daily check-in day " + day);
+      renderCheckin();
+    }
+  });
+}
+
+function renderMath() {
+  const a = Math.floor(Math.random() * 40) + 5;
+  const b = Math.floor(Math.random() * 40) + 5;
+  const correct = a + b;
+  let opts = [correct, correct + 2, correct - 3, correct + 5].sort(() => Math.random() - 0.5);
+  app.innerHTML = `
+    <div id="topbar"><span>← Math challenge</span></div>
+    <div style="padding:16px;">
+      <div class="card" style="text-align:center;font-size:22px;font-weight:600;">${a} + ${b} = ?</div>
+      <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:10px;margin-top:12px;" id="mathOpts">
+        ${opts.map(o => `<button class="btn btn-secondary opt">${o}</button>`).join("")}
+      </div>
+      <div id="mathResult"></div>
+    </div>
+  `;
+  document.querySelectorAll(".opt").forEach(btn => btn.addEventListener("click", async function () {
+    const val = Number(this.textContent);
+    document.querySelectorAll(".opt").forEach(b => b.disabled = true);
+    if (val === correct) {
+      document.getElementById("mathResult").innerHTML =
+        `<button class="btn btn-primary" id="claimMathBtn" style="margin-top:12px;">Watch ad to claim ${fmt(CFG.mathReward)} USDT</button>`;
+      document.getElementById("claimMathBtn").addEventListener("click", async () => {
+        const ok = await showRewardedAd();
+        if (ok) {
+          await addBalance(CFG.mathReward);
+          await addTx(uid, "math", CFG.mathReward, "Math challenge correct");
+          renderMath();
+        }
+      });
+    } else {
+      document.getElementById("mathResult").innerHTML =
+        `<p style="margin-top:12px;font-size:13px;color:#999;">Wrong answer - no reward this time.</p>
+         <button class="btn btn-secondary" id="nextMathBtn" style="margin-top:8px;">Try another</button>`;
+      document.getElementById("nextMathBtn").addEventListener("click", renderMath);
+    }
+  }));
+}
+
+async function fetchTriviaQuestion() {
+  try {
+    const res = await fetch("https://opentdb.com/api.php?amount=1&difficulty=hard&type=multiple");
+    const data = await res.json();
+    const q = data.results[0];
+    const decode = (s) => { const t = document.createElement("textarea"); t.innerHTML = s; return t.value; };
+    const options = [...q.incorrect_answers.map(decode), decode(q.correct_answer)].sort(() => Math.random() - 0.5);
+    return { question: decode(q.question), correct: decode(q.correct_answer), options };
+  } catch (e) {
+    return { question: "What is the capital of Bangladesh?", correct: "Dhaka", options: ["Chittagong", "Dhaka", "Khulna", "Sylhet"] };
+  }
+}
+
+async function renderQuiz() {
+  const usedUp = PROGRESS.quiz >= CFG.dailyQuizLimit;
+  app.innerHTML = `
+    <div id="topbar"><span>← Quiz</span></div>
+    <div style="padding:0 16px;text-align:right;font-size:12px;color:#e0a72c;">${PROGRESS.quiz} of ${CFG.dailyQuizLimit} used today</div>
+    <div style="padding:16px;" id="quizBody">${usedUp ? "Daily limit reached." : "Loading question..."}</div>
+  `;
+  if (usedUp) return;
+  const q = await fetchTriviaQuestion();
+  document.getElementById("quizBody").innerHTML = `
+    <div class="card" style="font-size:14px;font-weight:600;">${q.question}</div>
+    <div style="display:flex;flex-direction:column;gap:8px;margin-top:12px;" id="quizOpts">
+      ${q.options.map(o => `<button class="btn btn-secondary opt">${o}</button>`).join("")}
+    </div>
+    <div id="quizResult"></div>
+  `;
+  document.querySelectorAll(".opt").forEach(btn => btn.addEventListener("click", async function () {
+    document.querySelectorAll(".opt").forEach(b => b.disabled = true);
+    await saveProgress("quiz", PROGRESS.quiz + 1);
+    if (this.textContent === q.correct) {
+      document.getElementById("quizResult").innerHTML =
+        `<button class="btn btn-primary" id="claimQuizBtn" style="margin-top:12px;">Watch ad to claim ${fmt(CFG.quizReward)} USDT</button>`;
+      document.getElementById("claimQuizBtn").addEventListener("click", async () => {
+        const ok = await showRewardedAd();
+        if (ok) {
+          await addBalance(CFG.quizReward);
+          await addTx(uid, "quiz", CFG.quizReward, "Quiz correct answer");
+          renderQuiz();
+        }
+      });
+    } else {
+      document.getElementById("quizResult").innerHTML =
+        `<p style="margin-top:12px;font-size:13px;color:#999;">Wrong answer - no reward.</p>
+         <button class="btn btn-secondary" id="nextQuizBtn" style="margin-top:8px;">Next question</button>`;
+      document.getElementById("nextQuizBtn").addEventListener("click", renderQuiz);
+    }
+  }));
+}
+
+function renderRefer() {
+  app.innerHTML = `
+    <div id="topbar"><span>← Refer & earn</span></div>
+    <div class="card" style="margin:0 16px 14px;text-align:center;">
+      <div>Invite a friend, earn ${fmt(CFG.referralBonus)} USDT for every friend who joins</div>
+    </div>
+    <div style="padding:0 16px 10px;">
+      <input readonly value="https://t.me/YOUR_BOT?start=${uid}" id="refLink" />
+    </div>
+    <div style="padding:0 16px 16px;">
+      <button class="btn btn-primary" id="shareBtn">Share invite link</button>
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:10px;padding:0 16px 16px;">
+      <div class="card" style="text-align:center;">
+        <div style="font-size:18px;font-weight:600;">${USER.referralCount || 0}</div>
+        <div style="font-size:11px;color:#999;">Total referrals</div>
+      </div>
+      <div class="card" style="text-align:center;">
+        <div style="font-size:18px;font-weight:600;">${fmt((USER.referralCount || 0) * CFG.referralBonus)}</div>
+        <div style="font-size:11px;color:#999;">USDT earned</div>
+      </div>
+    </div>
+  `;
+  document.getElementById("shareBtn").addEventListener("click", () => {
+    const link = document.getElementById("refLink").value;
+    tg?.openTelegramLink
+      ? tg.openTelegramLink(`https://t.me/share/url?url=${encodeURIComponent(link)}`)
+      : navigator.clipboard?.writeText(link);
+  });
+}
+
+async function renderWithdraw() {
+  const req = CFG.withdrawRequiredTasks;
+  const checks = [
+    { label: `Watch ${req.ads} ads`, done: PROGRESS.ads >= req.ads },
+    { label: "Daily check-in", done: !req.checkin || PROGRESS.checkin },
+    { label: `Complete ${req.surveys} survey`, done: PROGRESS.surveys >= req.surveys },
+    { label: `Answer ${req.quiz} quiz questions`, done: PROGRESS.quiz >= req.quiz }
+  ];
+  const allDone = checks.every(c => c.done);
+  app.innerHTML = `
+    <div id="topbar"><span>← Withdraw</span></div>
+    <div id="balanceCard"><div style="font-size:12px;opacity:0.85;">Available balance</div>
+      <div style="font-size:22px;font-weight:600;">${fmt(USER.balance)} USDT</div></div>
+    <p style="padding:0 16px 8px;font-size:12px;color:#999;">Complete today's tasks to unlock withdraw</p>
+    <div style="padding:0 16px 12px;">
+      ${checks.map(c => `<div class="listRow"><span style="color:${c.done?'#fff':'#777'}">${c.label}</span><span>${c.done ? "✅" : "❌"}</span></div>`).join("")}
+    </div>
+    ${!allDone ? `<div class="card" style="margin:0 16px 14px;color:#e0a72c;font-size:12px;">Finish all tasks above to unlock withdraw.</div>` : ""}
+    <div style="padding:0 16px 10px;">
+      <input id="wAmount" placeholder="Amount (USDT)" ${allDone ? "" : "disabled"} />
+    </div>
+    <div style="padding:0 16px 10px;">
+      <select id="wMethod" ${allDone ? "" : "disabled"} style="width:100%;padding:11px;border-radius:10px;background:#1a1a22;color:#fff;border:1px solid #2c2c38;">
+        <option value="Binance">Binance (USDT)</option>
+        <option value="Bkash">Bkash</option>
+        <option value="Nagad">Nagad</option>
+      </select>
+    </div>
+    <div style="padding:0 16px 10px;">
+      <input id="wAccount" placeholder="Binance UID / wallet address" ${allDone ? "" : "disabled"} />
+    </div>
+    <div style="padding:0 16px 16px;">
+      <button class="btn btn-primary" id="wSubmit" ${allDone ? "" : "disabled"}>Request withdraw</button>
+    </div>
+  `;
+  document.getElementById("wSubmit")?.addEventListener("click", async () => {
+    const amount = parseFloat(document.getElementById("wAmount").value);
+    const method = document.getElementById("wMethod").value;
+    const account = document.getElementById("wAccount").value.trim();
+    if (!amount || amount < CFG.minWithdraw || amount > USER.balance) return alert("Invalid amount.");
+    if (!account) return alert("Enter your account / wallet address.");
+    await addDoc(collection(db, "withdrawals"), {
+      telegramId: uid, amount, method, account, status: "pending", requestedAt: serverTimestamp()
+    });
+    await addBalance(-amount);
+    alert("Withdraw request submitted.");
+    renderWithdraw();
+  });
+}
+
+async function renderHistory() {
+  app.innerHTML = `<div id="topbar"><span>← History</span></div><div id="histList" style="padding:0 16px;">Loading...</div>`;
+  const q = query(collection(db, "transactions"), where("telegramId", "==", uid), orderBy("createdAt", "desc"), limit(30));
+  const snap = await getDocs(q);
+  if (snap.empty) {
+    document.getElementById("histList").innerHTML = `<p style="color:#999;font-size:13px;">No activity yet.</p>`;
+    return;
+  }
+  document.getElementById("histList").innerHTML = snap.docs.map(d => {
+    const t = d.data();
+    return `<div class="listRow"><span>${t.note || t.type}</span><span style="color:${t.amount>=0?'#5dcaa5':'#e24b4a'}">${t.amount>=0?'+':''}${fmt(t.amount)}</span></div>`;
+  }).join("");
+}
+
+function navigate(view) {
+  document.querySelectorAll(".navItem").forEach(n => n.classList.toggle("active", n.dataset.view === view));
+  if (["home","survey","spin","scratch","checkin","math","quiz"].includes(view) && ["refer","withdraw","history"].some(v => document.querySelector(`.navItem[data-view=${v}]`)?.classList.contains("active"))) {
+    document.querySelectorAll(".navItem").forEach(n => n.classList.toggle("active", n.dataset.view === "home"));
+  }
+  if (view === "home") renderHome();
+  else if (view === "survey") renderSurvey();
+  else if (view === "spin") renderSpin();
+  else if (view === "scratch") renderScratch();
+  else if (view === "checkin") renderCheckin();
+  else if (view === "math") renderMath();
+  else if (view === "quiz") renderQuiz();
+  else if (view === "refer") renderRefer();
+  else if (view === "withdraw") renderWithdraw();
+  else if (view === "history") renderHistory();
+}
+
+document.querySelectorAll("#bottomNav .navItem").forEach(el =>
+  el.addEventListener("click", () => navigate(el.dataset.view))
+);
+
+(async function init() {
+  await loadConfig();
+  await loadMonetagSDK(CFG.monetagZoneId);
+  await loadUser();
+  await loadProgress();
+  navigate("home");
+  startAutoAdLoop();
+})();
+</script>
+</body>
+</html>

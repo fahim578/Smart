@@ -1,0 +1,2229 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
+<title>Earn App</title>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<!-- Ad network IDs/links are no longer hardcoded here - they are all
+     set from admin.html and loaded from Firestore at startup. -->
+
+<style>
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; font-family: -apple-system, Roboto, Arial, sans-serif;
+    background: #0f0f14; color: #fff; padding-bottom: 70px;
+  }
+  .hidden { display: none !important; }
+  .card { background: #1a1a22; border-radius: 14px; padding: 14px 16px; }
+  .btn {
+    width: 100%; border: none; border-radius: 12px; padding: 13px;
+    font-size: 14px; font-weight: 600; cursor: pointer;
+  }
+  .btn-primary { background: #6b5ce7; color: #fff; }
+  .btn-secondary { background: #24242e; color: #fff; }
+  .btn:disabled { opacity: 0.4; }
+  input {
+    width: 100%; padding: 11px 12px; border-radius: 10px; border: 1px solid #2c2c38;
+    background: #1a1a22; color: #fff; font-size: 14px;
+  }
+  #topbar { display: flex; align-items: center; justify-content: space-between; padding: 16px; }
+  #balanceCard { margin: 0 16px 14px; border-radius: 14px; padding: 16px; background: #6b5ce7; }
+  #tasksGrid { display: grid; grid-template-columns: repeat(2,1fr); gap: 10px; padding: 0 16px 16px; }
+  .taskTile { background: #1a1a22; border-radius: 14px; padding: 16px 10px; text-align: center; }
+  .taskTile .icon { font-size: 26px; margin-bottom: 6px; }
+  #bottomNav {
+    position: fixed; bottom: 0; left: 0; right: 0; display: flex; justify-content: space-around;
+    background: #15151c; padding: 10px 0; border-top: 1px solid #24242e;
+  }
+  .navItem { text-align: center; font-size: 10px; color: #777; cursor: pointer; }
+  .navItem.active { color: #6b5ce7; }
+  .navItem .icon { font-size: 20px; }
+  .listRow { display: flex; align-items: center; justify-content: space-between; padding: 10px 0; border-bottom: 1px solid #24242e; }
+  #adOverlay {
+    position: fixed; inset: 0; background: rgba(0,0,0,0.8); display: flex;
+    align-items: center; justify-content: center; z-index: 999;
+  }
+  #adOverlay .box { background: #1a1a22; border-radius: 16px; padding: 16px; width: 85%; max-width: 300px; text-align: center; }
+</style>
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
+<style id="premium-ui">
+  :root{
+    --bg:#080910;--surface:#11131d;--surface2:#171a27;--line:rgba(255,255,255,.08);
+    --primary:#7c5cff;--primary2:#5b8cff;--text:#f7f7fb;--muted:#8f94a8;
+    --green:#36d399;--yellow:#f6c453;--danger:#ff667a;
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  html{background:var(--bg)}
+  body{
+    margin:0!important;min-height:100vh;padding-bottom:82px!important;
+    font-family:Inter,system-ui,-apple-system,sans-serif!important;
+    color:var(--text)!important;background:
+      radial-gradient(circle at 15% -10%,rgba(124,92,255,.22),transparent 34%),
+      radial-gradient(circle at 100% 20%,rgba(91,140,255,.13),transparent 30%),
+      var(--bg)!important;
+    overflow-x:hidden;
+  }
+  body:before{
+    content:"";position:fixed;inset:0;pointer-events:none;z-index:-1;
+    background:linear-gradient(120deg,transparent 0%,rgba(255,255,255,.015) 45%,transparent 55%);
+    animation:shine 7s linear infinite;
+  }
+  @keyframes shine{0%{transform:translateX(-100%)}100%{transform:translateX(100%)}}
+  @keyframes rise{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:none}}
+  @keyframes float{0%,100%{transform:translateY(0)}50%{transform:translateY(-4px)}}
+  @keyframes pulseGlow{0%,100%{box-shadow:0 0 0 rgba(124,92,255,0)}50%{box-shadow:0 0 28px rgba(124,92,255,.25)}}
+  .card,.taskTile,#balanceCard,#adOverlay .box{
+    border:1px solid var(--line)!important;
+    box-shadow:0 12px 35px rgba(0,0,0,.22)!important;
+    backdrop-filter:blur(12px);
+  }
+  .card{background:linear-gradient(145deg,rgba(25,28,42,.96),rgba(15,17,27,.96))!important}
+  #topbar{
+    min-height:58px;padding:14px 16px!important;
+    font-family:"Space Grotesk",Inter,sans-serif;font-weight:600;font-size:16px;
+  }
+  #balanceCard{
+    position:relative;overflow:hidden;margin:0 16px 16px!important;padding:20px!important;
+    border:0!important;border-radius:20px!important;
+    background:linear-gradient(135deg,#7657ff 0%,#5f70ff 48%,#3f9bff 100%)!important;
+    animation:pulseGlow 3s ease-in-out infinite;
+  }
+  #balanceCard:after{
+    content:"";position:absolute;width:170px;height:170px;right:-55px;top:-75px;border-radius:50%;
+    background:rgba(255,255,255,.12);filter:blur(2px);
+  }
+  #balanceCard:before{
+    content:"";position:absolute;width:90px;height:90px;right:35px;bottom:-50px;border-radius:50%;
+    background:rgba(255,255,255,.08);
+  }
+  #balanceCard > *{position:relative;z-index:1}
+  #balanceCard div:nth-child(2){font-family:"Space Grotesk",sans-serif!important;font-size:30px!important;font-weight:700!important;letter-spacing:-.5px}
+  #tasksGrid{gap:12px!important;padding:0 16px 18px!important}
+  .taskTile{
+    position:relative;overflow:hidden;padding:17px 10px!important;min-height:108px;
+    background:linear-gradient(145deg,#151824,#10121b)!important;
+    transition:transform .2s ease,border-color .2s ease,box-shadow .2s ease;
+    animation:rise .45s ease both;
+  }
+  .taskTile:nth-child(2){animation-delay:.04s}.taskTile:nth-child(3){animation-delay:.08s}
+  .taskTile:nth-child(4){animation-delay:.12s}.taskTile:nth-child(5){animation-delay:.16s}
+  .taskTile:nth-child(6){animation-delay:.20s}
+  .taskTile:before{
+    content:"";position:absolute;inset:0;background:linear-gradient(120deg,rgba(124,92,255,.10),transparent 55%);
+    opacity:0;transition:opacity .2s;
+  }
+  .taskTile:active{transform:scale(.97)}
+  .taskTile:hover{transform:translateY(-2px);border-color:rgba(124,92,255,.4)!important;box-shadow:0 12px 28px rgba(0,0,0,.28)!important}
+  .taskTile:hover:before{opacity:1}
+  .taskTile .icon{
+    display:flex;align-items:center;justify-content:center;width:46px;height:46px;margin:0 auto 9px!important;
+    border-radius:14px;font-size:23px!important;
+    background:linear-gradient(145deg,rgba(124,92,255,.20),rgba(91,140,255,.10));
+    border:1px solid rgba(124,92,255,.18);animation:float 3.5s ease-in-out infinite;
+  }
+  .taskTile{font-size:12px;font-weight:600}
+  .btn{
+    position:relative;overflow:hidden;border-radius:14px!important;padding:14px!important;
+    font-family:Inter,sans-serif!important;font-weight:700!important;
+    transition:transform .18s,filter .18s,box-shadow .18s!important;
+  }
+  .btn:active{transform:scale(.98)}
+  .btn-primary{
+    background:linear-gradient(135deg,#7657ff,#5b8cff)!important;
+    box-shadow:0 9px 24px rgba(103,85,255,.24)!important;
+  }
+  .btn-primary:hover{filter:brightness(1.08)}
+  .btn-secondary{background:#191c28!important;border:1px solid var(--line)!important}
+  input,select{
+    background:#11141e!important;border:1px solid var(--line)!important;
+    border-radius:13px!important;outline:none;transition:border-color .2s,box-shadow .2s;
+  }
+  input:focus,select:focus{border-color:rgba(124,92,255,.65)!important;box-shadow:0 0 0 3px rgba(124,92,255,.10)}
+  #bottomNav{
+    left:10px!important;right:10px!important;bottom:10px!important;
+    border:1px solid var(--line)!important;border-radius:20px!important;
+    background:rgba(15,17,27,.88)!important;backdrop-filter:blur(18px);
+    box-shadow:0 15px 40px rgba(0,0,0,.42)!important;padding:8px 4px!important;
+  }
+  .navItem{
+    min-width:70px;padding:5px 8px!important;border-radius:14px;
+    color:#777d91!important;font-weight:600;transition:.2s;
+  }
+  .navItem.active{color:#fff!important;background:rgba(124,92,255,.14)}
+  .navItem .icon{font-size:19px!important;margin-bottom:2px}
+  .navItem.active .icon{filter:drop-shadow(0 0 8px rgba(124,92,255,.6))}
+  .listRow{border-bottom:1px solid var(--line)!important;padding:13px 0!important}
+  #adOverlay{background:rgba(2,3,8,.78)!important;backdrop-filter:blur(8px)}
+  #adOverlay .box{background:#121521!important}
+  #app{animation:rise .35s ease}
+  p{line-height:1.5}
+  ::selection{background:rgba(124,92,255,.35)}
+</style>
+
+
+<style id="ios-premium-theme">
+  :root{
+    --ios-bg:#f2f2f7;--ios-card:rgba(255,255,255,.78);--ios-solid:#fff;
+    --ios-text:#111116;--ios-muted:#777782;--ios-line:rgba(60,60,67,.14);
+    --ios-blue:#007aff;--ios-purple:#5856d6;--ios-green:#34c759;--ios-red:#ff3b30;
+    --ios-shadow:0 10px 35px rgba(0,0,0,.08);
+  }
+  body{
+    color:var(--ios-text)!important;
+    background:
+      radial-gradient(circle at 15% -5%,rgba(88,86,214,.20),transparent 35%),
+      radial-gradient(circle at 100% 15%,rgba(0,122,255,.12),transparent 32%),
+      linear-gradient(180deg,#f7f7fb 0%,#eef0f5 100%)!important;
+    font-family:-apple-system,BlinkMacSystemFont,"SF Pro Display","SF Pro Text",Inter,sans-serif!important;
+  }
+  body:before{display:none}
+  #app{min-height:calc(100vh - 82px);animation:iosPageIn .32s ease}
+  @keyframes iosPageIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+  #topbar{
+    color:var(--ios-text)!important;
+    font-family:-apple-system,BlinkMacSystemFont,"SF Pro Display",sans-serif!important;
+    font-size:18px!important;font-weight:700!important;
+    padding:16px!important;
+  }
+  #balanceCard{
+    margin:0 16px 18px!important;border-radius:24px!important;
+    background:linear-gradient(135deg,#5856d6,#007aff)!important;
+    box-shadow:0 14px 34px rgba(0,122,255,.22)!important;
+    border:1px solid rgba(255,255,255,.28)!important;
+  }
+  #balanceCard div:nth-child(2){font-family:-apple-system,BlinkMacSystemFont,"SF Pro Display",sans-serif!important}
+  #tasksGrid{grid-template-columns:repeat(2,minmax(0,1fr));gap:12px!important}
+  .taskTile,.card{
+    color:var(--ios-text)!important;
+    background:rgba(255,255,255,.72)!important;
+    border:1px solid rgba(255,255,255,.8)!important;
+    box-shadow:var(--ios-shadow)!important;
+    backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);
+    border-radius:20px!important;
+  }
+  .taskTile{min-height:112px!important;padding:17px 10px!important}
+  .taskTile .icon{
+    width:48px!important;height:48px!important;border-radius:15px!important;
+    background:linear-gradient(145deg,rgba(88,86,214,.14),rgba(0,122,255,.10))!important;
+    border:1px solid rgba(88,86,214,.10)!important;
+  }
+  .taskTile .icon svg,.navItem svg{
+    width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:1.8;
+    stroke-linecap:round;stroke-linejoin:round;
+  }
+  .taskTile>span{display:block;position:relative;z-index:1}
+  .btn{
+    border-radius:16px!important;min-height:48px!important;
+    font-size:15px!important;letter-spacing:-.1px;
+    box-shadow:0 8px 20px rgba(0,122,255,.13)!important;
+  }
+  .btn-primary{
+    background:linear-gradient(135deg,#007aff,#5856d6)!important;
+  }
+  .btn-secondary{
+    color:var(--ios-text)!important;background:rgba(255,255,255,.78)!important;
+    border:1px solid var(--ios-line)!important;box-shadow:none!important;
+  }
+  input,select{
+    color:var(--ios-text)!important;background:rgba(255,255,255,.82)!important;
+    border:1px solid var(--ios-line)!important;
+    box-shadow:inset 0 1px 1px rgba(0,0,0,.03)!important;
+  }
+  input::placeholder{color:#a0a0aa}
+  #bottomNav{
+    left:12px!important;right:12px!important;bottom:10px!important;
+    border:1px solid rgba(60,60,67,.10)!important;border-radius:23px!important;
+    background:rgba(250,250,252,.82)!important;
+    box-shadow:0 10px 35px rgba(0,0,0,.14)!important;
+    backdrop-filter:blur(22px);-webkit-backdrop-filter:blur(22px);
+  }
+  .navItem{
+    color:#8b8b93!important;font-size:10px!important;font-weight:600!important;
+    border-radius:17px!important;padding:7px 9px!important;
+  }
+  .navItem.active{color:var(--ios-blue)!important;background:rgba(0,122,255,.09)!important}
+  .navItem .icon{font-size:0!important;margin-bottom:2px}
+  .navItem .icon svg{display:block;width:21px;height:21px;margin:auto}
+  .listRow{border-bottom:1px solid var(--ios-line)!important}
+  .status-ok{color:var(--ios-green);font-weight:800;font-size:18px}
+  .status-no{color:var(--ios-red);font-weight:800;font-size:18px}
+  #adOverlay .box{
+    color:var(--ios-text)!important;background:rgba(255,255,255,.90)!important;
+    border:1px solid rgba(255,255,255,.9)!important;border-radius:24px!important;
+    box-shadow:0 25px 70px rgba(0,0,0,.20)!important;
+  }
+  @media(prefers-color-scheme:dark){
+    :root{--ios-text:#f5f5f7;--ios-muted:#98989f;--ios-line:rgba(255,255,255,.12)}
+    body{
+      background:
+        radial-gradient(circle at 15% -5%,rgba(88,86,214,.25),transparent 35%),
+        radial-gradient(circle at 100% 15%,rgba(0,122,255,.16),transparent 32%),
+        #000!important;
+    }
+    .taskTile,.card{background:rgba(28,28,30,.78)!important;border-color:rgba(255,255,255,.08)!important}
+    .btn-secondary,input,select{color:#f5f5f7!important;background:rgba(28,28,30,.80)!important}
+    #bottomNav{background:rgba(28,28,30,.82)!important;border-color:rgba(255,255,255,.08)!important}
+    #topbar{color:#f5f5f7!important}
+    #adOverlay .box{color:#f5f5f7!important;background:rgba(28,28,30,.92)!important}
+  }
+</style>
+
+
+<style id="premium-v2">
+  :root{
+    --p-blue:#007aff;--p-purple:#5856d6;--p-cyan:#32ade6;--p-green:#34c759;
+    --p-red:#ff3b30;--p-orange:#ff9500;--p-text:#111116;--p-muted:#777782;
+  }
+  body{position:relative}
+  body:after{
+    content:"";position:fixed;z-index:-2;inset:-20%;
+    background:
+      radial-gradient(circle at 15% 20%,rgba(88,86,214,.13),transparent 25%),
+      radial-gradient(circle at 85% 30%,rgba(0,122,255,.10),transparent 24%),
+      radial-gradient(circle at 45% 100%,rgba(50,173,230,.08),transparent 26%);
+    animation:bgDrift 12s ease-in-out infinite alternate;
+    pointer-events:none;
+  }
+  @keyframes bgDrift{
+    0%{transform:translate3d(-2%,-1%,0) scale(1)}
+    50%{transform:translate3d(2%,1%,0) scale(1.04)}
+    100%{transform:translate3d(-1%,2%,0) scale(1.02)}
+  }
+  @keyframes cardIn{
+    from{opacity:0;transform:translateY(18px) scale(.985)}
+    to{opacity:1;transform:translateY(0) scale(1)}
+  }
+  @keyframes softFloat{
+    0%,100%{transform:translateY(0)}
+    50%{transform:translateY(-5px)}
+  }
+  @keyframes shimmer{
+    0%{transform:translateX(-130%)}
+    100%{transform:translateX(130%)}
+  }
+  @keyframes ring{
+    0%{box-shadow:0 0 0 0 rgba(0,122,255,.18)}
+    70%{box-shadow:0 0 0 10px rgba(0,122,255,0)}
+    100%{box-shadow:0 0 0 0 rgba(0,122,255,0)}
+  }
+
+  #app>*{animation:cardIn .38s cubic-bezier(.2,.8,.2,1) both}
+  #tasksGrid .taskTile{animation:cardIn .42s cubic-bezier(.2,.8,.2,1) both}
+  #tasksGrid .taskTile:nth-child(1){animation-delay:.03s}
+  #tasksGrid .taskTile:nth-child(2){animation-delay:.07s}
+  #tasksGrid .taskTile:nth-child(3){animation-delay:.11s}
+  #tasksGrid .taskTile:nth-child(4){animation-delay:.15s}
+  #tasksGrid .taskTile:nth-child(5){animation-delay:.19s}
+  #tasksGrid .taskTile:nth-child(6){animation-delay:.23s}
+
+  .taskTile{
+    cursor:pointer!important;
+    transition:transform .22s cubic-bezier(.2,.8,.2,1),box-shadow .22s,border-color .22s!important;
+  }
+  .taskTile:after{
+    content:"";position:absolute;left:-120%;top:0;width:70%;height:100%;
+    background:linear-gradient(100deg,transparent,rgba(255,255,255,.18),transparent);
+    transform:skewX(-18deg);transition:none;pointer-events:none;
+  }
+  .taskTile:hover:after{animation:shimmer .75s ease}
+  .taskTile:active{transform:scale(.955)!important}
+  .taskTile .icon{animation:softFloat 3.2s ease-in-out infinite}
+  .taskTile:nth-child(even) .icon{animation-delay:.45s}
+
+  #balanceCard{animation:cardIn .5s cubic-bezier(.2,.8,.2,1),ring 3s ease-out 1.1s}
+  #balanceCard:after{animation:softFloat 5s ease-in-out infinite}
+
+  .btn{overflow:hidden}
+  .btn:before{
+    content:"";position:absolute;inset:0;left:-120%;
+    width:65%;background:linear-gradient(100deg,transparent,rgba(255,255,255,.22),transparent);
+    transform:skewX(-18deg);pointer-events:none;
+  }
+  .btn:hover:before{animation:shimmer .7s ease}
+  .btn:active{transform:scale(.965)!important}
+
+  /* Withdraw page */
+  .withdraw-hero{
+    margin:0 16px 14px;padding:20px;border-radius:24px;
+    color:#fff;position:relative;overflow:hidden;
+    background:linear-gradient(135deg,#007aff 0%,#5856d6 55%,#7a52d8 100%);
+    box-shadow:0 16px 38px rgba(0,122,255,.20);
+  }
+  .withdraw-hero:before,.withdraw-hero:after{
+    content:"";position:absolute;border-radius:50%;background:rgba(255,255,255,.10);
+  }
+  .withdraw-hero:before{width:150px;height:150px;right:-55px;top:-70px}
+  .withdraw-hero:after{width:90px;height:90px;right:65px;bottom:-55px}
+  .withdraw-hero>*{position:relative;z-index:1}
+  .withdraw-title{font-size:13px;opacity:.85;font-weight:600}
+  .withdraw-balance{font-size:30px;font-weight:800;letter-spacing:-.7px;margin-top:4px}
+  .withdraw-sub{font-size:11px;opacity:.78;margin-top:5px}
+
+  .require-box{
+    margin:0 16px 14px;padding:16px;border-radius:22px;
+    background:rgba(255,255,255,.72);border:1px solid rgba(60,60,67,.10);
+    box-shadow:0 10px 30px rgba(0,0,0,.07);
+    backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);
+  }
+  .require-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:13px}
+  .require-head strong{font-size:15px}
+  .require-head span{font-size:11px;color:var(--p-muted)}
+  .req-item{
+    display:flex;align-items:center;gap:11px;padding:11px 10px;margin:7px 0;
+    border-radius:15px;background:rgba(120,120,128,.07);
+    transition:.2s;
+  }
+  .req-item.done{background:rgba(52,199,89,.10)}
+  .req-icon{
+    width:34px;height:34px;display:grid;place-items:center;flex:none;
+    border-radius:11px;background:rgba(0,122,255,.10);color:var(--p-blue);
+  }
+  .req-item.done .req-icon{background:rgba(52,199,89,.13);color:var(--p-green)}
+  .req-icon svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:1.9;stroke-linecap:round;stroke-linejoin:round}
+  .req-copy{min-width:0;flex:1}
+  .req-copy b{display:block;font-size:12px;font-weight:650}
+  .req-copy small{display:block;color:var(--p-muted);font-size:10px;margin-top:2px}
+  .req-status{font-size:18px;font-weight:800}
+  .req-status.done{color:var(--p-green)}
+  .req-status.todo{color:#b0b0b8}
+  .progress-track{
+    height:7px;border-radius:99px;background:rgba(120,120,128,.13);
+    overflow:hidden;margin-top:12px;
+  }
+  .progress-fill{
+    height:100%;border-radius:99px;
+    background:linear-gradient(90deg,#007aff,#5856d6,#af52de);
+    transition:width .6s cubic-bezier(.2,.8,.2,1);
+  }
+  .withdraw-form{
+    margin:0 16px;padding:16px;border-radius:22px;
+    background:rgba(255,255,255,.72);border:1px solid rgba(60,60,67,.10);
+    box-shadow:0 10px 30px rgba(0,0,0,.07);
+    backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);
+  }
+  .form-title{font-size:15px;font-weight:700;margin-bottom:12px}
+  .field-label{font-size:10px;color:var(--p-muted);font-weight:600;margin:10px 2px 6px}
+  .withdraw-form input,.withdraw-form select{min-height:47px}
+  .withdraw-lock{
+    display:flex;gap:10px;align-items:flex-start;margin:12px 0 0;padding:11px;
+    border-radius:14px;background:rgba(255,149,0,.09);color:#8b6100;font-size:11px;line-height:1.45
+  }
+  .withdraw-lock svg{width:18px;height:18px;flex:none;fill:none;stroke:currentColor;stroke-width:1.8}
+  .success-pill{
+    display:inline-flex;align-items:center;gap:5px;padding:5px 9px;border-radius:999px;
+    background:rgba(52,199,89,.11);color:var(--p-green);font-size:10px;font-weight:700
+  }
+  .success-pill svg{width:13px;height:13px;fill:none;stroke:currentColor;stroke-width:2}
+
+  @media(prefers-color-scheme:dark){
+    .require-box,.withdraw-form{
+      background:rgba(28,28,30,.78);border-color:rgba(255,255,255,.08);
+      box-shadow:0 12px 34px rgba(0,0,0,.22)
+    }
+    .req-item{background:rgba(118,118,128,.13)}
+    .req-item.done{background:rgba(52,199,89,.13)}
+    .withdraw-lock{color:#e2b84b;background:rgba(255,149,0,.12)}
+    /* --p-text defaulted to near-black, which made bold amounts (like the
+       withdraw minimum) invisible on a dark background - fixed here */
+    :root{--p-text:#f5f5f7}
+  }
+</style>
+
+
+<style id="survey-premium-v4">
+.survey-page{
+  padding:0 16px 24px;
+  animation:surveyIn .42s cubic-bezier(.2,.8,.2,1) both;
+}
+@keyframes surveyIn{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:none}}
+@keyframes surveyFloat{0%,100%{transform:translateY(0)}50%{transform:translateY(-4px)}}
+@keyframes surveyPulse{0%,100%{box-shadow:0 0 0 0 rgba(0,122,255,.12)}50%{box-shadow:0 0 0 9px rgba(0,122,255,0)}}
+.survey-top{
+  display:flex;align-items:center;gap:12px;margin-bottom:14px;
+}
+.survey-back{
+  width:42px;height:42px;border:0;border-radius:15px;
+  display:grid;place-items:center;flex:none;
+  color:var(--ios-text);background:rgba(255,255,255,.76);
+  border:1px solid rgba(60,60,67,.10);box-shadow:0 7px 20px rgba(0,0,0,.06);
+  font-size:22px;cursor:pointer;
+}
+.survey-heading h1{margin:0;font-size:21px;font-weight:800;letter-spacing:-.4px}
+.survey-heading p{margin:3px 0 0;font-size:11px;color:var(--p-muted)}
+.survey-hero{
+  position:relative;overflow:hidden;padding:19px;border-radius:24px;color:#fff;
+  background:linear-gradient(135deg,#007aff 0%,#5856d6 58%,#8a4fe3 100%);
+  box-shadow:0 16px 38px rgba(0,122,255,.20);
+  margin-bottom:13px;animation:surveyPulse 3s ease-in-out infinite;
+}
+.survey-hero:before,.survey-hero:after{
+  content:"";position:absolute;border-radius:50%;background:rgba(255,255,255,.11);
+}
+.survey-hero:before{width:150px;height:150px;right:-65px;top:-72px}
+.survey-hero:after{width:80px;height:80px;right:50px;bottom:-48px}
+.survey-hero>*{position:relative;z-index:1}
+.survey-hero-row{display:flex;align-items:center;gap:12px}
+.survey-icon{
+  width:48px;height:48px;border-radius:16px;display:grid;place-items:center;
+  background:rgba(255,255,255,.16);border:1px solid rgba(255,255,255,.22);
+  animation:surveyFloat 3s ease-in-out infinite;flex:none;
+}
+.survey-icon svg{width:25px;height:25px}
+.survey-hero h2{margin:0;font-size:17px;font-weight:800}
+.survey-hero .sub{margin:4px 0 0;font-size:10px;line-height:1.45;opacity:.82}
+.survey-reward{
+  margin-left:auto;text-align:right;white-space:nowrap;
+}
+.survey-reward b{display:block;font-size:19px;font-weight:850}
+.survey-reward span{font-size:9px;opacity:.75}
+.survey-stats{
+  display:grid;grid-template-columns:1fr 1fr;gap:9px;margin-top:15px;
+}
+.survey-stat{
+  padding:10px 11px;border-radius:14px;background:rgba(255,255,255,.13);
+  border:1px solid rgba(255,255,255,.14);
+}
+.survey-stat small{display:block;font-size:9px;opacity:.72}
+.survey-stat strong{display:block;margin-top:3px;font-size:12px}
+.survey-section{
+  padding:16px;border-radius:21px;margin-bottom:12px;
+  background:rgba(255,255,255,.74);border:1px solid rgba(60,60,67,.10);
+  box-shadow:0 9px 28px rgba(0,0,0,.06);
+  backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);
+}
+.survey-section-title{display:flex;align-items:center;gap:8px;margin-bottom:12px}
+.survey-section-title .dot{
+  width:28px;height:28px;border-radius:10px;display:grid;place-items:center;
+  background:rgba(0,122,255,.10);color:var(--p-blue);font-size:14px;
+}
+.survey-section-title b{font-size:14px}
+.survey-section-title span{font-size:10px;color:var(--p-muted);margin-left:auto}
+.survey-rules{display:grid;gap:8px}
+.survey-rule{
+  display:flex;gap:10px;align-items:flex-start;padding:11px 10px;border-radius:15px;
+  background:rgba(120,120,128,.065);border:1px solid rgba(60,60,67,.055);
+}
+.survey-rule-num{
+  width:25px;height:25px;border-radius:9px;display:grid;place-items:center;flex:none;
+  color:#fff;background:linear-gradient(135deg,#007aff,#5856d6);font-size:11px;font-weight:800;
+}
+.survey-rule b{font-size:11px}
+.survey-rule div:last-child{font-size:10px;color:var(--p-muted);line-height:1.45}
+.survey-open{
+  display:flex;align-items:center;gap:11px;width:100%;border:0;cursor:pointer;
+  padding:14px 15px;border-radius:17px;color:#fff;
+  background:linear-gradient(135deg,#007aff,#5856d6);
+  box-shadow:0 10px 24px rgba(0,122,255,.20);font-size:14px;font-weight:800;
+  position:relative;overflow:hidden;
+}
+.survey-open svg,.survey-submit svg{width:19px;height:19px;flex:none}
+.survey-open .arrow{margin-left:auto;opacity:.8}
+.survey-field-label{font-size:10px;color:var(--p-muted);font-weight:700;margin:14px 2px 6px}
+.survey-input-wrap{position:relative}
+.survey-input-wrap svg{
+  position:absolute;left:13px;top:50%;transform:translateY(-50%);
+  width:18px;height:18px;color:var(--p-blue);pointer-events:none;
+}
+.survey-input{
+  min-height:49px!important;padding-left:41px!important;font-size:14px!important;
+}
+.survey-submit{
+  display:flex;align-items:center;justify-content:center;gap:8px;width:100%;
+  margin-top:11px;border:0;cursor:pointer;min-height:49px;border-radius:16px;
+  color:#fff;background:linear-gradient(135deg,#34c759,#19a94a);
+  box-shadow:0 10px 24px rgba(52,199,89,.18);font-size:14px;font-weight:800;
+  position:relative;overflow:hidden;
+}
+.survey-submit:disabled{background:#aeb2bb!important;box-shadow:none!important;cursor:not-allowed}
+.survey-note{
+  display:flex;gap:8px;align-items:flex-start;margin-top:11px;padding:10px 11px;
+  border-radius:13px;background:rgba(255,149,0,.09);color:#876000;font-size:10px;line-height:1.45;
+}
+.survey-note svg{width:16px;height:16px;flex:none}
+.survey-limit{
+  margin-top:9px;text-align:center;font-size:10px;color:var(--p-muted);
+}
+@media(prefers-color-scheme:dark){
+  .survey-back{background:rgba(28,28,30,.82);border-color:rgba(255,255,255,.08)}
+  .survey-section{background:rgba(28,28,30,.78);border-color:rgba(255,255,255,.08);box-shadow:0 12px 34px rgba(0,0,0,.20)}
+  .survey-rule{background:rgba(118,118,128,.13);border-color:rgba(255,255,255,.06)}
+  .survey-note{color:#e2b84b;background:rgba(255,149,0,.12)}
+}
+</style>
+
+<style id="spin-layout-fix">
+/* (superseded — the Spin page now defines its own complete dark design inline; kept empty intentionally) */
+</style>
+</head>
+<body>
+
+<main id="app" aria-live="polite"></main>
+
+<div id="bottomNav">
+  <div class="navItem" data-view="home"><div class="icon svg-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 10.8 12 3l9 7.8v9.2a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"/></svg></div><span>Home</span></div>
+  <div class="navItem" data-view="refer"><div class="icon svg-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M16 21v-2a4 4 0 0 0-4-4H7a4 4 0 0 0-4 4v2"/><circle cx="9.5" cy="7" r="4"/><path d="M17 11a4 4 0 1 0-1-7.9M21 21v-2a4 4 0 0 0-3-3.87"/></svg></div><span>Refer</span></div>
+  <div class="navItem" data-view="withdraw"><div class="icon svg-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="15" rx="3"/><path d="M3 9h18M16 14h2"/></svg></div><span>Withdraw</span></div>
+  <div class="navItem" data-view="history"><div class="icon svg-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 4v5h5M12 7v5l3 2"/></svg></div><span>History</span></div>
+  <div class="navItem" data-view="profile"><div class="icon svg-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 3.5-7 8-7s8 3 8 7"/></svg></div><span>Profile</span></div>
+</div>
+
+<!-- Firebase (gstatic, fixed version, for a coherent SDK build) -->
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-app.js";
+import {
+  getFirestore, doc, getDoc, setDoc, updateDoc, increment, addDoc,
+  collection, query, where, orderBy, limit, getDocs, serverTimestamp
+} from "https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js";
+
+// ===================== FIREBASE CONFIG =====================
+// Paste your Firebase project config here (Project settings -> General -> Your apps)
+const firebaseConfig = {
+  apiKey: "AIzaSyAwa8-kqkxSLt0d0Dj697rUw1L0GpL4COI",
+  authDomain: "smart-earning-23b42.firebaseapp.com",
+  projectId: "smart-earning-23b42",
+  storageBucket: "smart-earning-23b42.firebasestorage.app",
+  messagingSenderId: "45425574806",
+  appId: "1:45425574806:web:a6f1268dd4fe6da4aa53b7"
+};
+// =============================================================
+
+const fbApp = initializeApp(firebaseConfig);
+const db = getFirestore(fbApp);
+
+const tg = window.Telegram?.WebApp;
+tg?.ready();
+tg?.expand();
+
+const tgUser = tg?.initDataUnsafe?.user || { id: "demo123", first_name: "Guest", username: "guest" };
+const uid = String(tgUser.id);
+const todayKey = () => new Date().toISOString().slice(0, 10);
+
+// ------------- default settings (overridden by Firestore config/settings) -------------
+let CFG = {
+  adReward: 0.003, surveyReward: 0.015, mathReward: 0.005, quizReward: 0.004,
+  spinRewards: [0.002, 0.004, 0.006, 0.010, 0.003, 0.005],
+  scratchRewards: [0.005, 0.010, 0.015],
+  checkinRewards: [0.002, 0.003, 0.004, 0.006, 0.008, 0.010, 0.015],
+  dailyAdLimit: 20, dailySpinLimit: 3, dailyScratchLimit: 2,
+  dailySurveyLimit: 2, dailyQuizLimit: 10,
+  referralBonus: 0.020, minWithdraw: 1.000,
+  autoAdIntervalSec: 120,
+  surveyLink: "https://your-adsterra-or-gigapub-direct-link.com",
+  monetagZoneId: "",
+  withdrawRequiredTasks: { ads: 5, checkin: true, surveys: 1, quiz: 3 },
+  // ---- channel-join tasks ----
+  minChannelTaskReward: 0.005,   // lowest reward per join an added-task owner can set
+  // ---- anti-multi-account device check (off by default, only runs at withdraw time) ----
+  deviceCheckEnabled: false,
+  // Cloud Function base URL (deploy the /functions project in this folder, then paste
+  // its URL here from the admin panel - needed to verify channel joins and, when the
+  // device check above is on, to look up matching devices)
+  cloudFunctionUrl: "",
+  // Exactly these channels must be verified-joined before a referral bonus
+  // is paid out to whoever invited the new user. Empty = pay instantly (old behavior).
+  referralRequiredChannels: [],
+  botUsername: ""
+};
+
+let monetagFn = null; // filled in after the SDK loads with the zone ID from admin settings
+
+// Dynamically loads the Monetag SDK using the zone ID set in admin.html.
+// Nothing is hardcoded in this file - change the zone ID from the admin
+// panel any time and it takes effect on the next app load.
+function loadMonetagSDK(zoneId) {
+  return new Promise((resolve) => {
+    if (!zoneId) return resolve(false);
+    const fnName = "show_" + zoneId;
+    const s = document.createElement("script");
+    s.src = "//libtl.com/sdk.js";
+    s.dataset.zone = zoneId;
+    s.dataset.sdk = fnName;
+    s.onload = () => { monetagFn = fnName; resolve(true); };
+    s.onerror = () => resolve(false);
+    document.head.appendChild(s);
+  });
+}
+
+let USER = null;
+let PROGRESS = null;
+
+// ------------- lightweight device fingerprint (for the optional withdraw-time multi-account check) -------------
+function getDeviceFingerprint() {
+  try {
+    const canvas = document.createElement("canvas");
+    const ctx = canvas.getContext("2d");
+    ctx.textBaseline = "top";
+    ctx.font = "14px Arial";
+    ctx.fillText("device-fp", 2, 2);
+    const raw = [
+      navigator.userAgent, navigator.language, screen.width + "x" + screen.height,
+      screen.colorDepth, new Date().getTimezoneOffset(), canvas.toDataURL()
+    ].join("|");
+    let hash = 0;
+    for (let i = 0; i < raw.length; i++) { hash = (hash << 5) - hash + raw.charCodeAt(i); hash |= 0; }
+    return "fp_" + Math.abs(hash).toString(36);
+  } catch (e) {
+    return "fp_unknown";
+  }
+}
+
+async function loadConfig() {
+  const snap = await getDoc(doc(db, "config", "settings"));
+  if (snap.exists()) CFG = { ...CFG, ...snap.data() };
+}
+
+async function loadUser() {
+  const ref = doc(db, "users", uid);
+  const snap = await getDoc(ref);
+  const fingerprint = getDeviceFingerprint();
+  if (snap.exists()) {
+    USER = snap.data();
+    if (!USER.deviceFingerprint) {
+      USER.deviceFingerprint = fingerprint;
+      await updateDoc(ref, { deviceFingerprint: fingerprint });
+    }
+  } else {
+    const startParam = tg?.initDataUnsafe?.start_param || null;
+    USER = {
+      telegramId: uid, firstName: tgUser.first_name || "", username: tgUser.username || "",
+      balance: 0, referredBy: startParam && startParam !== uid ? startParam : null,
+      referralCount: 0, deviceFingerprint: fingerprint, banned: false, createdAt: serverTimestamp()
+    };
+    await setDoc(ref, USER);
+    if (USER.referredBy) {
+      const refRef = doc(db, "users", USER.referredBy);
+      const refSnap = await getDoc(refRef);
+      if (refSnap.exists()) {
+        const gateChannels = (CFG.referralRequiredChannels || []).filter(c => c && c.username);
+        if (gateChannels.length) {
+          // Bonus is held until this new user verifies joining every required channel
+          await setDoc(doc(db, "referralPending", uid), {
+            referrerUid: USER.referredBy, requiredChannels: gateChannels,
+            joinedUsernames: [], completed: false, createdAt: serverTimestamp()
+          });
+        } else {
+          await updateDoc(refRef, {
+            balance: increment(CFG.referralBonus),
+            referralCount: increment(1)
+          });
+          await addTx(USER.referredBy, "referral", CFG.referralBonus, "New referral joined");
+        }
+      }
+    }
+  }
+}
+
+// Checks this user's pending referral-gate doc (if any) and, if it's already
+// complete from a previous session, does nothing further.
+async function getReferralGate() {
+  const snap = await getDoc(doc(db, "referralPending", uid));
+  if (!snap.exists() || snap.data().completed) return null;
+  return snap.data();
+}
+
+async function verifyReferralChannel(username) {
+  if (!CFG.cloudFunctionUrl) { alert("Verification is not set up yet - admin needs to add the Cloud Function URL."); return false; }
+  const res = await fetch(CFG.cloudFunctionUrl.replace(/\/$/, "") + "/checkMembership", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ channelUsername: username, telegramId: uid })
+  });
+  const data = await res.json();
+  return !!data.joined;
+}
+
+// Runs only when the admin turns on "Device check" and only at withdraw time.
+// Finds other accounts sharing this exact device and, if any are found, bans
+// every account on that device (this one included) instead of paying out.
+async function runDeviceCheckOrBan() {
+  if (!CFG.deviceCheckEnabled) return { ok: true };
+  const fp = USER.deviceFingerprint || getDeviceFingerprint();
+  const q = query(collection(db, "users"), where("deviceFingerprint", "==", fp));
+  const snap = await getDocs(q);
+  if (snap.size <= 1) return { ok: true };
+  const ids = snap.docs.map(d => d.id);
+  await Promise.all(ids.map(id => updateDoc(doc(db, "users", id), { banned: true, banReason: "multi-account device" })));
+  return { ok: false, count: ids.length };
+}
+
+async function loadProgress() {
+  const ref = doc(db, "progress", uid + "_" + todayKey());
+  const snap = await getDoc(ref);
+  if (snap.exists()) {
+    PROGRESS = snap.data();
+  } else {
+    PROGRESS = { ads: 0, spins: 0, scratches: 0, surveys: 0, quiz: 0, checkin: false };
+    await setDoc(ref, PROGRESS);
+  }
+}
+
+async function saveProgress(field, valueOrIncrement) {
+  PROGRESS[field] = valueOrIncrement;
+  const ref = doc(db, "progress", uid + "_" + todayKey());
+  await updateDoc(ref, { [field]: valueOrIncrement });
+}
+
+async function addBalance(amount) {
+  USER.balance = (USER.balance || 0) + amount;
+  await updateDoc(doc(db, "users", uid), { balance: increment(amount) });
+}
+
+async function addTx(forUid, type, amount, note) {
+  await addDoc(collection(db, "transactions"), {
+    telegramId: forUid, type, amount, note, createdAt: serverTimestamp()
+  });
+}
+
+function fmt(n) { return Number(n || 0).toFixed(3); }
+
+// ------------- rewarded ad trigger (Monetag) -------------
+function showRewardedAd() {
+  return new Promise((resolve) => {
+    if (monetagFn && typeof window[monetagFn] === "function") {
+      window[monetagFn]().then(() => resolve(true)).catch(() => resolve(false));
+    } else {
+      // Monetag zone ID not set in admin.html yet - fallback so the flow can still be tested
+      alert("Ad network is not set up yet - add your Monetag zone ID in the admin panel.");
+      resolve(true);
+    }
+  });
+}
+
+// ------------- auto interstitial popup (no reward) -------------
+function startAutoAdLoop() {
+  setInterval(() => {
+    if (monetagFn && typeof window[monetagFn] === "function") {
+      window[monetagFn]("pop");
+    }
+  }, (CFG.autoAdIntervalSec || 120) * 1000);
+}
+
+// ===================== VIEWS =====================
+const app = document.getElementById("app");
+
+function renderHome() {
+  const adDone = PROGRESS.ads >= CFG.dailyAdLimit;
+  app.innerHTML = `
+    <div id="topbar">
+      <div style="display:flex;align-items:center;gap:8px;">
+        <div style="width:32px;height:32px;border-radius:50%;background:#6b5ce7;display:flex;align-items:center;justify-content:center;font-weight:600;">${(USER.firstName||"U")[0]}</div>
+        <span>${USER.firstName || "User"}</span>
+      </div>
+    </div>
+    <div id="referralGateSlot"></div>
+    <div id="balanceCard">
+      <div style="font-size:12px;opacity:0.85;">Your balance</div>
+      <div style="font-size:24px;font-weight:600;">${fmt(USER.balance)} <span style="font-size:13px;">USDT</span></div>
+    </div>
+    <div style="padding:0 16px 8px;">
+      <button class="btn btn-primary" id="watchAdBtn" ${adDone ? "disabled" : ""}>
+        ${adDone ? "Daily ad limit reached" : "Watch Ad & Earn"}
+      </button>
+    </div>
+    <p style="padding:12px 16px 8px;font-size:12px;color:#999;">More ways to earn</p>
+    <div id="tasksGrid">
+      <div class="taskTile" data-view="survey"><div class="icon svg-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="3" width="14" height="18" rx="2"/><path d="M8 7h8M8 11h8M8 15h5"/></svg></div><span>Survey</span></div>
+      <div class="taskTile" data-view="spin"><div class="icon svg-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 3v9l6.5 6.5M12 12l-5-7.5M12 12l-7.5 5"/></svg></div><span>Spin & earn</span></div>
+      <div class="taskTile" data-view="checkin"><div class="icon svg-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="3"/><path d="M7 3v4M17 3v4M3 10h18M8 14h3M8 17h5"/></svg></div><span>Daily check-in</span></div>
+      <div class="taskTile" data-view="scratch"><div class="icon svg-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16v4a2 2 0 0 0 0 4v4H4v-4a2 2 0 0 0 0-4z"/><path d="M12 8v2M12 14v2"/></svg></div><span>Scratch card</span></div>
+      <div class="taskTile" data-view="math"><div class="icon svg-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="2" width="16" height="20" rx="3"/><path d="M8 6h8M8 11h2M14 11h2M8 15h2M14 15h2M8 19h2M14 19h2"/></svg></div><span>Math challenge</span></div>
+      <div class="taskTile" data-view="quiz"><div class="icon svg-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M9.5 9a2.5 2.5 0 1 1 4.2 1.8c-1.2 1-1.7 1.4-1.7 2.7M12 17h.01"/></svg></div><span>Quiz</span></div>
+    </div>
+    <div id="adminTaskSlot"></div>
+  `;
+  document.getElementById("watchAdBtn")?.addEventListener("click", async () => {
+    if (PROGRESS.ads >= CFG.dailyAdLimit) return;
+    const ok = await showRewardedAd();
+    if (ok) {
+      await addBalance(CFG.adReward);
+      await saveProgress("ads", PROGRESS.ads + 1);
+      await addTx(uid, "ad", CFG.adReward, "Watched ad");
+      renderHome();
+    }
+  });
+  document.querySelectorAll(".taskTile").forEach(el =>
+    el.addEventListener("click", () => navigate(el.dataset.view))
+  );
+  loadAdminTasksIntoHome();
+  loadReferralGateIntoHome();
+}
+
+// If this user joined via a referral link and the admin requires joining
+// specific channels first, show that checklist here until it's done -
+// only then does the person who referred them get their bonus.
+async function loadReferralGateIntoHome() {
+  const slot = document.getElementById("referralGateSlot");
+  if (!slot) return;
+  const gate = await getReferralGate();
+  if (!gate) { slot.innerHTML = ""; return; }
+
+  slot.innerHTML = `
+    <div style="margin:0 16px 14px;padding:14px 16px;border-radius:16px;background:rgba(0,122,255,.10);border:1px solid rgba(0,122,255,.18);">
+      <div style="font-weight:700;font-size:13px;margin-bottom:2px;">Join to activate your referral</div>
+      <div style="font-size:11px;color:var(--p-muted);margin-bottom:10px;">Whoever invited you gets their bonus once you've joined all of these.</div>
+      <div id="gateChannelList"></div>
+    </div>
+  `;
+  const list = document.getElementById("gateChannelList");
+  list.innerHTML = gate.requiredChannels.map((c, i) => {
+    const done = gate.joinedUsernames.includes(c.username);
+    return `<div style="display:flex;align-items:center;gap:8px;padding:8px 0;${i > 0 ? "border-top:1px solid rgba(0,122,255,.12);" : ""}">
+      <span style="flex:1;font-size:12px;">${c.username}</span>
+      <button class="gateJoinBtn" data-link="${c.link}" style="border:none;background:rgba(0,122,255,.14);color:var(--p-blue);border-radius:8px;padding:6px 10px;font-size:11px;font-weight:700;">Open</button>
+      <button class="gateVerifyBtn" data-username="${c.username}" style="border:none;background:${done ? "rgba(52,199,89,.18)" : "#007aff"};color:${done ? "#34c759" : "#fff"};border-radius:8px;padding:6px 10px;font-size:11px;font-weight:700;" ${done ? "disabled" : ""}>${done ? "Verified" : "Verify"}</button>
+    </div>`;
+  }).join("");
+
+  list.querySelectorAll(".gateJoinBtn").forEach(b => b.addEventListener("click", () => {
+    tg?.openTelegramLink ? tg.openTelegramLink(b.dataset.link) : window.open(b.dataset.link, "_blank");
+  }));
+
+  list.querySelectorAll(".gateVerifyBtn").forEach(b => b.addEventListener("click", async () => {
+    b.disabled = true; b.textContent = "Checking...";
+    const joined = await verifyReferralChannel(b.dataset.username);
+    if (!joined) {
+      alert("You haven't joined that channel yet.");
+      b.disabled = false; b.textContent = "Verify";
+      return;
+    }
+    const gateRef = doc(db, "referralPending", uid);
+    const updated = Array.from(new Set([...gate.joinedUsernames, b.dataset.username]));
+    gate.joinedUsernames = updated;
+    await updateDoc(gateRef, { joinedUsernames: updated });
+
+    if (updated.length >= gate.requiredChannels.length) {
+      await updateDoc(gateRef, { completed: true });
+      await updateDoc(doc(db, "users", gate.referrerUid), {
+        balance: increment(CFG.referralBonus), referralCount: increment(1)
+      });
+      await addTx(gate.referrerUid, "referral", CFG.referralBonus, "Referral completed channel requirement");
+      alert("All channels verified! Your referrer just got their bonus.");
+      slot.innerHTML = "";
+    } else {
+      loadReferralGateIntoHome();
+    }
+  }));
+}
+
+// Shows a tile for admin-added channel-join tasks right inside the task
+// grid, but only when at least one is actually active - nothing hardcoded.
+async function loadAdminTasksIntoHome() {
+  const slot = document.getElementById("adminTaskSlot");
+  if (!slot) return;
+  try {
+    const snap = await getDocs(query(collection(db, "channelTasks"), where("status", "==", "active")));
+    const activeCount = snap.docs.filter(d => (d.data().joinsRemaining ?? 1) > 0).length;
+    if (!activeCount) { slot.innerHTML = ""; return; }
+    slot.innerHTML = `
+      <div style="padding:0 16px 16px;">
+        <div class="taskTile" id="channelTaskTile" style="display:flex;align-items:center;gap:12px;text-align:left;padding:14px 16px;">
+          <div class="icon svg-icon" style="margin:0;"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 12h8M12 8v8"/><circle cx="12" cy="12" r="9"/></svg></div>
+          <div style="flex:1;">
+            <span style="display:block;">Channel tasks</span>
+            <span style="display:block;font-size:11px;color:#999;font-weight:400;">${activeCount} channel${activeCount === 1 ? "" : "s"} to join</span>
+          </div>
+        </div>
+      </div>
+    `;
+    document.getElementById("channelTaskTile").addEventListener("click", () => navigate("channelTasks"));
+  } catch (e) {
+    console.error(e);
+  }
+}
+
+function renderSurvey() {
+  const usedUp = PROGRESS.surveys >= CFG.dailySurveyLimit;
+  app.innerHTML = `
+    <div class="survey-page">
+      <div class="survey-top">
+        <button class="survey-back" id="surveyBack" aria-label="Back">‹</button>
+        <div class="survey-heading">
+          <h1>Survey</h1>
+          <p>Complete the task and submit for review</p>
+        </div>
+      </div>
+
+      <div class="survey-hero">
+        <div class="survey-hero-row">
+          <div class="survey-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="5" y="3" width="14" height="18" rx="2"/>
+              <path d="M8 7h8M8 11h8M8 15h5"/>
+              <path d="m14.5 17 1.3 1.3 2.7-3"/>
+            </svg>
+          </div>
+          <div>
+            <h2>Survey Task</h2>
+            <div class="sub">Follow the steps carefully to complete your submission.</div>
+          </div>
+          <div class="survey-reward">
+            <b>+${fmt(CFG.surveyReward)}</b>
+            <span>USDT reward</span>
+          </div>
+        </div>
+        <div class="survey-stats">
+          <div class="survey-stat">
+            <small>Today's usage</small>
+            <strong>${PROGRESS.surveys} / ${CFG.dailySurveyLimit} submitted</strong>
+          </div>
+          <div class="survey-stat">
+            <small>Review status</small>
+            <strong>Admin approval</strong>
+          </div>
+        </div>
+      </div>
+
+      <div class="survey-section">
+        <div class="survey-section-title">
+          <div class="dot">✓</div>
+          <b>Survey Rules</b>
+          <span>Read before starting</span>
+        </div>
+        <div class="survey-rules">
+          <div class="survey-rule">
+            <span class="survey-rule-num">1</span>
+            <div><b>Open the survey link</b><br>Tap the button below and complete the survey on the provided site.</div>
+          </div>
+          <div class="survey-rule">
+            <span class="survey-rule-num">2</span>
+            <div><b>Use the same number</b><br>Create your account using your phone number, then enter that same number here.</div>
+          </div>
+          <div class="survey-rule">
+            <span class="survey-rule-num">3</span>
+            <div><b>Submit only after completion</b><br>Make sure the survey is completed before sending your submission for review.</div>
+          </div>
+          <div class="survey-rule">
+            <span class="survey-rule-num">4</span>
+            <div><b>Wait for admin verification</b><br>Your reward is added after the submission is checked and approved.</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="survey-section">
+        <div class="survey-section-title">
+          <div class="dot">↗</div>
+          <b>Start Survey</b>
+          <span>Step 1</span>
+        </div>
+        <button class="survey-open" id="openLinkBtn" type="button">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M14 4h6v6"/><path d="M10 14 20 4"/><path d="M20 13v5a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h5"/>
+          </svg>
+          <span>Open Survey Link</span>
+          <span class="arrow">›</span>
+        </button>
+
+        <div class="survey-field-label">ACCOUNT / PHONE NUMBER</div>
+        <div class="survey-input-wrap">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M6.5 3.5h3l1.5 4-2 1.5a13 13 0 0 0 6 6l1.5-2 4 1.5v3a2 2 0 0 1-2.2 2A16.5 16.5 0 0 1 4.5 5.7 2 2 0 0 1 6.5 3.5Z"/>
+          </svg>
+          <input class="survey-input" id="numInput" type="tel" inputmode="tel" autocomplete="tel" maxlength="20" placeholder="Enter the number you used to register" ${usedUp ? "disabled" : ""} />
+        </div>
+
+        <button class="survey-submit" id="submitBtn" type="button" ${usedUp ? "disabled" : ""}>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M22 2 11 13"/><path d="m22 2-7 20-4-9-9-4Z"/>
+          </svg>
+          <span>${usedUp ? "Daily Limit Reached" : "Submit for Review"}</span>
+        </button>
+
+        <div class="survey-note">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="9"/><path d="M12 10v6M12 7h.01"/>
+          </svg>
+          <span>Submissions are reviewed by admin. Please enter accurate information to avoid rejection.</span>
+        </div>
+        <div class="survey-limit">${usedUp ? "You have reached today's survey limit." : `${CFG.dailySurveyLimit - PROGRESS.surveys} submission${CFG.dailySurveyLimit - PROGRESS.surveys === 1 ? "" : "s"} remaining today.`}</div>
+      </div>
+    </div>
+  `;
+
+  document.getElementById("surveyBack")?.addEventListener("click", () => navigate("home"));
+  document.getElementById("openLinkBtn")?.addEventListener("click", () => {
+    tg?.openLink ? tg.openLink(CFG.surveyLink) : window.open(CFG.surveyLink, "_blank");
+  });
+
+  document.getElementById("submitBtn")?.addEventListener("click", async () => {
+    const input = document.getElementById("numInput");
+    const num = input.value.trim();
+    if (!num) return alert("Enter the number you signed up with first.");
+    if (PROGRESS.surveys >= CFG.dailySurveyLimit) return alert("Daily survey limit reached.");
+
+    const btn = document.getElementById("submitBtn");
+    btn.disabled = true;
+    btn.querySelector("span").textContent = "Submitting...";
+
+    try {
+      await addDoc(collection(db, "surveySubmissions"), {
+        telegramId: uid, accountNumber: num, status: "pending", submittedAt: serverTimestamp()
+      });
+      await saveProgress("surveys", PROGRESS.surveys + 1);
+      alert("Submitted for review.");
+      renderSurvey();
+    } catch (e) {
+      console.error(e);
+      btn.disabled = false;
+      btn.querySelector("span").textContent = "Submit for Review";
+      alert("Could not submit right now. Please try again.");
+    }
+  });
+}
+
+function renderSpin() {
+  const usedUp = PROGRESS.spins >= CFG.dailySpinLimit;
+  const rewards = Array.isArray(CFG.spinRewards) && CFG.spinRewards.length
+    ? CFG.spinRewards.map(Number).filter(Number.isFinite)
+    : [0.002, 0.003, 0.004, 0.005, 0.006, 0.010];
+
+  const safeRewards = rewards.length ? rewards : [0.002, 0.003, 0.004, 0.005, 0.006, 0.010];
+  // six clearly distinct hues - no two colors next to each other look alike
+  const colors = ["#2dd4bf","#3b82f6","#f59e0b","#f43f5e","#8b5cf6","#84cc16"];
+  const wheelCount = safeRewards.length;
+  const segment = 360 / wheelCount;
+
+  const wheelLabels = safeRewards.map((reward, i) => {
+    const angle = (i * segment + segment / 2) - 90;
+    // fraction of the wheel's own width, e.g. 0.31-0.39 depending on how many slices there are
+    const labelFraction = Math.min(0.39, Math.max(0.31, 0.34 - wheelCount * 0.002));
+    return `<div class="spin-label" style="--angle:${angle}deg;--label:${labelFraction};">
+      <span>${fmt(reward)}</span>
+    </div>`;
+  }).join("");
+
+  const wheelBackground = `conic-gradient(from -90deg, ${
+    safeRewards.map((_, i) => {
+      const a0 = i * segment;
+      const a1 = (i + 1) * segment;
+      return `${colors[i % colors.length]} ${a0}deg ${a1}deg`;
+    }).join(", ")
+  })`;
+
+  app.innerHTML = `
+    <style>
+      /* Spin page — dark neon design inspired by the provided reference */
+      body:has(.spin-page){
+        background:
+          radial-gradient(circle at 8% 0%,rgba(65,55,210,.20),transparent 28%),
+          radial-gradient(circle at 100% 24%,rgba(0,110,255,.18),transparent 30%),
+          linear-gradient(180deg,#050713 0%,#070a18 52%,#040611 100%) !important;
+        color:#f7f8ff !important;
+      }
+      body:has(.spin-page) #bottomNav{
+        background:rgba(7,9,22,.90) !important;
+        border:1px solid rgba(120,132,255,.16) !important;
+        box-shadow:0 12px 40px rgba(0,0,0,.55),0 0 28px rgba(54,75,255,.08) !important;
+        backdrop-filter:blur(20px);
+        -webkit-backdrop-filter:blur(20px);
+      }
+      body:has(.spin-page) .navItem{color:#8c94b5 !important}
+      body:has(.spin-page) .navItem.active{
+        color:#8d76ff !important;
+        background:rgba(92,72,255,.13) !important;
+      }
+
+      .spin-page{
+        min-height:calc(100vh - 74px);
+        padding:12px 16px 100px;
+        color:#f8f9ff;
+        animation:spinPageIn .45s cubic-bezier(.2,.8,.2,1) both;
+      }
+      @keyframes spinPageIn{
+        from{opacity:0;transform:translateY(12px)}
+        to{opacity:1;transform:none}
+      }
+      .spin-head{
+        display:flex;align-items:center;gap:12px;margin:0 0 16px;
+      }
+      .spin-back{
+        width:48px;height:48px;flex:none;
+        border:1px solid rgba(116,105,255,.35);
+        border-radius:17px;
+        background:linear-gradient(145deg,rgba(77,62,200,.30),rgba(35,38,92,.22));
+        color:#fff;font-size:28px;line-height:1;
+        display:grid;place-items:center;
+        box-shadow:0 8px 25px rgba(0,0,0,.30),inset 0 1px 0 rgba(255,255,255,.08);
+        cursor:pointer;
+      }
+      .spin-back:active{transform:scale(.95)}
+      .spin-head-main{flex:1;min-width:0}
+      .spin-head-title{
+        font-size:26px;font-weight:850;line-height:1.05;
+        letter-spacing:-.7px;color:#fff;
+      }
+      .spin-head-sub{
+        margin-top:5px;color:#a2a7c0;font-size:13px;line-height:1.3;
+      }
+      .spin-used{
+        flex:none;padding:9px 12px;border-radius:999px;
+        color:#a28cff;
+        background:linear-gradient(135deg,rgba(100,74,255,.18),rgba(43,100,255,.13));
+        border:1px solid rgba(109,92,255,.38);
+        font-weight:800;font-size:11px;
+        box-shadow:0 0 18px rgba(91,73,255,.10);
+      }
+
+      .spin-card{
+        position:relative;overflow:hidden;
+        border:1px solid rgba(98,88,255,.34);
+        border-radius:30px;
+        padding:22px 14px 20px;
+        background:
+          radial-gradient(circle at 2% 3%,rgba(72,52,226,.27),transparent 30%),
+          radial-gradient(circle at 100% 40%,rgba(0,126,255,.16),transparent 30%),
+          radial-gradient(circle at 50% 100%,rgba(113,35,255,.11),transparent 35%),
+          linear-gradient(145deg,#0b0e20 0%,#080b19 58%,#070a16 100%);
+        box-shadow:
+          0 22px 65px rgba(0,0,0,.48),
+          0 0 35px rgba(63,65,255,.10),
+          inset 0 1px 0 rgba(255,255,255,.045);
+      }
+      .spin-card:before{
+        content:"";position:absolute;width:250px;height:250px;
+        left:-140px;top:-150px;border-radius:50%;
+        background:rgba(83,65,255,.17);filter:blur(10px);
+        pointer-events:none;
+      }
+      .spin-card:after{
+        content:"";position:absolute;width:220px;height:220px;
+        right:-150px;bottom:-140px;border-radius:50%;
+        background:rgba(0,132,255,.14);filter:blur(14px);
+        pointer-events:none;
+      }
+
+      .spin-badge{
+        position:relative;z-index:2;
+        display:inline-flex;align-items:center;gap:7px;
+        padding:8px 14px;border-radius:999px;
+        background:linear-gradient(135deg,rgba(86,63,238,.28),rgba(39,91,255,.18));
+        border:1px solid rgba(105,89,255,.32);
+        color:#a493ff;font-weight:850;font-size:12px;
+        box-shadow:0 5px 20px rgba(72,56,255,.12);
+      }
+      .spin-badge-dot{
+        width:7px;height:7px;border-radius:50%;
+        background:#8c76ff;box-shadow:0 0 12px #725cff;
+      }
+      .spin-title{
+        position:relative;z-index:2;
+        margin:17px 0 6px;text-align:center;
+        font-size:30px;line-height:1.08;font-weight:900;
+        letter-spacing:-1px;color:#fff;
+        text-shadow:0 3px 18px rgba(99,77,255,.18);
+      }
+      .spin-desc{
+        position:relative;z-index:2;
+        max-width:430px;margin:0 auto;
+        color:#aeb4cc;text-align:center;font-size:13px;
+        line-height:1.55;
+      }
+
+      .wheel-wrap{
+        width:min(100%, 430px);aspect-ratio:1/1;
+        margin:25px auto 21px;
+        position:relative;display:grid;place-items:center;
+      }
+      .wheel-glow{
+        position:absolute;inset:3%;border-radius:50%;
+        background:radial-gradient(circle,rgba(72,64,255,.34),rgba(0,125,255,.13) 48%,transparent 72%);
+        filter:blur(16px);
+        animation:wheelGlow 2.8s ease-in-out infinite;
+        pointer-events:none;
+      }
+      @keyframes wheelGlow{
+        0%,100%{transform:scale(.98);opacity:.82}
+        50%{transform:scale(1.07);opacity:1}
+      }
+      .wheel{
+        width:calc(100% - 10px);height:calc(100% - 10px);
+        border-radius:50%;position:relative;
+        background:${wheelBackground};
+        border:9px solid #eef2ff;
+        box-shadow:
+          0 0 0 2px rgba(105,86,255,.65),
+          0 0 0 7px rgba(0,116,255,.10),
+          0 0 35px rgba(62,74,255,.34),
+          0 18px 45px rgba(0,0,0,.48);
+        transform:rotate(0deg);
+        transition:transform 4.8s cubic-bezier(.12,.74,.08,1);
+        overflow:hidden;
+        z-index:2;
+        will-change:transform;
+      }
+      .wheel:before{
+        content:"";position:absolute;inset:0;border-radius:50%;
+        background:linear-gradient(135deg,rgba(255,255,255,.16),transparent 35%,rgba(0,0,0,.08));
+        pointer-events:none;z-index:1;
+      }
+      .wheel:after{
+        content:"";position:absolute;inset:8%;
+        border-radius:50%;border:1px dashed rgba(255,255,255,.58);
+        box-shadow:inset 0 0 20px rgba(255,255,255,.06);
+        pointer-events:none;z-index:2;
+      }
+      .spin-label{
+        position:absolute;left:50%;top:50%;
+        width:0;height:0;
+        /* radius is a fixed share of the wheel's own width, not of this
+           (zero-size) element - that's what makes the labels actually show */
+        transform:rotate(var(--angle)) translateY(calc(-1 * min(94vw, 400px) * var(--label)));
+        transform-origin:0 0;pointer-events:none;z-index:4;
+      }
+      .spin-label span{
+        position:absolute;
+        transform:translate(-50%,-50%) rotate(calc(-1 * var(--angle)));
+        white-space:nowrap;color:#fff;font-size:15px;font-weight:900;
+        text-shadow:0 2px 6px rgba(0,0,0,.65);
+      }
+      .wheel-center{
+        position:absolute;z-index:5;width:82px;height:82px;border-radius:50%;
+        display:grid;place-items:center;
+        background:radial-gradient(circle at 35% 25%,#25284a,#0b0d1a 72%);
+        border:7px solid #f1f4ff;
+        box-shadow:
+          0 7px 24px rgba(0,0,0,.48),
+          0 0 24px rgba(88,71,255,.32),
+          inset 0 1px 0 rgba(255,255,255,.12);
+        color:#fff;font-size:15px;font-weight:950;
+        letter-spacing:.2px;pointer-events:none;
+      }
+      .wheel-pointer{
+        position:absolute;z-index:7;top:-2px;left:50%;
+        transform:translateX(-50%);
+        width:0;height:0;
+        border-left:15px solid transparent;
+        border-right:15px solid transparent;
+        border-top:0;border-bottom:36px solid #6e63ff;
+        filter:drop-shadow(0 4px 7px rgba(0,0,0,.55));
+      }
+      .wheel-pointer:after{
+        content:"";position:absolute;left:-6px;top:7px;
+        width:12px;height:12px;border-radius:50%;
+        background:#fff;box-shadow:0 0 12px rgba(255,255,255,.75);
+      }
+
+      .spin-main-btn{
+        position:relative;z-index:2;
+        width:100%;height:56px;border:1px solid rgba(166,153,255,.25);
+        border-radius:18px;
+        background:linear-gradient(100deg,#7651ff 0%,#6d64ff 42%,#168cff 100%);
+        color:#fff;font-size:16px;font-weight:900;letter-spacing:.1px;
+        box-shadow:0 13px 30px rgba(76,66,255,.34),inset 0 1px 0 rgba(255,255,255,.22);
+        cursor:pointer;transition:transform .2s ease,filter .2s ease;
+        overflow:hidden;
+      }
+      .spin-main-btn:before{
+        content:"";position:absolute;inset:0;
+        background:linear-gradient(110deg,transparent 25%,rgba(255,255,255,.20) 50%,transparent 75%);
+        transform:translateX(-120%);animation:spinBtnShine 3.4s infinite;
+      }
+      @keyframes spinBtnShine{45%,100%{transform:translateX(120%)}}
+      .spin-main-btn:active{transform:scale(.985)}
+      .spin-main-btn:disabled{opacity:.52;box-shadow:none;cursor:not-allowed}
+
+      .spin-result{
+        position:relative;z-index:2;
+        margin-top:14px;text-align:center;
+      }
+      .spin-result:empty{margin:0;display:none;}
+      .spin-result-card{
+        padding:16px;border-radius:19px;
+        background:rgba(98,82,255,.10);
+        border:1px solid rgba(111,94,255,.22);
+        box-shadow:inset 0 1px 0 rgba(255,255,255,.03);
+      }
+      .spin-result-small{font-size:11px;color:#949ab2}
+      .spin-result-amount{
+        font-size:27px;font-weight:950;margin-top:4px;
+        color:#b8aaff;text-shadow:0 0 16px rgba(130,105,255,.25);
+      }
+
+      .spin-info-grid{
+        position:relative;z-index:2;
+        display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:13px;
+      }
+      .spin-info{
+        min-height:112px;padding:15px;border-radius:19px;
+        background:linear-gradient(145deg,rgba(23,27,52,.94),rgba(11,14,29,.94));
+        border:1px solid rgba(104,111,170,.20);
+        box-shadow:0 10px 25px rgba(0,0,0,.22),inset 0 1px 0 rgba(255,255,255,.03);
+      }
+      .spin-info-title{
+        font-size:13px;font-weight:850;color:#f3f5ff;
+      }
+      .spin-info-text{
+        margin-top:7px;color:#9ba2ba;font-size:11px;line-height:1.55;
+      }
+      .spin-remaining{
+        position:relative;z-index:2;
+        text-align:center;color:#9ca3bd;font-size:11px;margin-top:15px;
+      }
+
+      @media(max-width:390px){
+        .spin-page{padding-left:12px;padding-right:12px}
+        .spin-head-title{font-size:24px}
+        .spin-head-sub{font-size:12px}
+        .spin-used{font-size:10px;padding:8px 10px}
+        .spin-back{width:46px;height:46px}
+        .spin-card{padding:20px 11px 18px;border-radius:27px}
+        .spin-title{font-size:27px}
+        .spin-desc{font-size:12px}
+        .wheel-wrap{margin-top:22px}
+        .wheel{border-width:8px}
+        .wheel-center{width:76px;height:76px;border-width:6px;font-size:14px}
+        .spin-label span{font-size:14px}
+        .spin-main-btn{height:53px;font-size:15px}
+        .spin-info-grid{gap:8px}
+        .spin-info{padding:13px;min-height:104px}
+        .spin-info-title{font-size:12px}
+        .spin-info-text{font-size:10px}
+      }
+    </style>
+
+    <div class="spin-page">
+      <div class="spin-head">
+        <button class="spin-back" id="spinBack" aria-label="Back">‹</button>
+        <div class="spin-head-main">
+          <div class="spin-head-title">Spin &amp; Earn</div>
+          <div class="spin-head-sub">Try your luck and win a reward</div>
+        </div>
+        <div class="spin-used">${PROGRESS.spins}/${CFG.dailySpinLimit} used</div>
+      </div>
+
+      <div class="spin-card">
+        <div style="text-align:center">
+          <div class="spin-badge">
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 12v9H4v-9M2 7h20v5H2zM12 22V7M12 7C10 3 6 2 5 4s1 3 3 3M12 7c2-4 6-5 7-3s-1 3-3 3"/></svg>
+            <span>DAILY REWARD SPIN</span>
+          </div>
+        </div>
+
+        <div class="spin-title">Spin the Wheel</div>
+        <div class="spin-desc">One spin can unlock a random reward. Complete the spin and watch the ad to claim.</div>
+
+        <div class="wheel-wrap">
+          <div class="wheel-glow"></div>
+          <div class="wheel-pointer"></div>
+          <div class="wheel" id="spinWheel">${wheelLabels}</div>
+          <div class="wheel-center">SPIN</div>
+        </div>
+
+        <button class="spin-main-btn" id="spinBtn" ${usedUp ? "disabled" : ""}>
+          ${usedUp ? "NO SPINS LEFT TODAY" : "SPIN NOW"}
+        </button>
+
+        <div id="spinResult" class="spin-result"></div>
+
+        <div class="spin-info-grid">
+          <div class="spin-info">
+            <div class="spin-info-title">
+              <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align:-3px;margin-right:5px;"><path d="M20 12v9H4v-9M2 7h20v5H2zM12 22V7"/></svg>
+              Random Reward
+            </div>
+            <div class="spin-info-text">The reward is selected automatically when you spin.</div>
+          </div>
+          <div class="spin-info">
+            <div class="spin-info-title">
+              <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align:-3px;margin-right:5px;"><path d="m10 8 6 4-6 4V8Z"/><rect x="2" y="5" width="20" height="14" rx="3"/></svg>
+              Watch to Claim
+            </div>
+            <div class="spin-info-text">After spinning, watch the rewarded ad to receive it.</div>
+          </div>
+        </div>
+
+        <div class="spin-remaining">${usedUp ? "Daily spin limit reached." : `${CFG.dailySpinLimit - PROGRESS.spins} spin${CFG.dailySpinLimit - PROGRESS.spins === 1 ? "" : "s"} remaining today.`}</div>
+      </div>
+    </div>
+  `;
+
+  document.getElementById("spinBack")?.addEventListener("click", () => navigate("home"));
+
+  document.getElementById("spinBtn")?.addEventListener("click", async () => {
+    if (PROGRESS.spins >= CFG.dailySpinLimit) return;
+
+    const index = Math.floor(Math.random() * safeRewards.length);
+    const reward = safeRewards[index];
+    const wheel = document.getElementById("spinWheel");
+    const extraTurns = 5 + Math.floor(Math.random() * 3);
+    const targetAngle = 360 - (index * segment + segment / 2);
+    const rotation = extraTurns * 360 + targetAngle;
+
+    const btn = document.getElementById("spinBtn");
+    btn.disabled = true;
+    btn.textContent = "SPINNING...";
+
+    wheel.style.transform = `rotate(${rotation}deg)`;
+
+    setTimeout(() => {
+      document.getElementById("spinResult").innerHTML = `
+        <div class="spin-result-card">
+          <div class="spin-result-small">You landed on</div>
+          <div class="spin-result-amount">${fmt(reward)} USDT</div>
+        </div>
+        <button class="spin-main-btn" id="claimSpinBtn" style="margin-top:12px;height:56px;">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align:-3px;margin-right:6px;"><path d="m10 8 6 4-6 4V8Z"/><rect x="2" y="5" width="20" height="14" rx="3"/></svg>
+          WATCH AD TO CLAIM
+        </button>
+      `;
+
+      document.getElementById("claimSpinBtn")?.addEventListener("click", async () => {
+        const ok = await showRewardedAd();
+        if (ok) {
+          await addBalance(reward);
+          await saveProgress("spins", PROGRESS.spins + 1);
+          await addTx(uid, "spin", reward, "Spin reward");
+          renderSpin();
+        }
+      });
+    }, 4900);
+  });
+}
+
+function renderScratch() {
+  const usedUp = PROGRESS.scratches >= CFG.dailyScratchLimit;
+  app.innerHTML = `
+    <div class="survey-page">
+      <div class="survey-top">
+        <button class="survey-back" id="scBack" aria-label="Back">‹</button>
+        <div class="survey-heading">
+          <h1>Scratch card</h1>
+          <p>Tap the card to reveal a reward</p>
+        </div>
+      </div>
+
+      <div class="survey-hero">
+        <div class="survey-hero-row">
+          <div class="survey-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 6h16v4a2 2 0 0 0 0 4v4H4v-4a2 2 0 0 0 0-4z"/><path d="M12 8v2M12 14v2"/></svg>
+          </div>
+          <div><h2>Scratch Card</h2><div class="sub">One tap reveals a random reward.</div></div>
+        </div>
+        <div class="survey-stats">
+          <div class="survey-stat"><small>Today's usage</small><strong>${PROGRESS.scratches} / ${CFG.dailyScratchLimit} used</strong></div>
+          <div class="survey-stat"><small>Claim method</small><strong>Watch ad</strong></div>
+        </div>
+      </div>
+
+      <div class="survey-section">
+        <div class="survey-section-title"><div class="dot">↗</div><b>Reveal your card</b><span>Scratch it</span></div>
+        <div id="scratchWrap" style="position:relative;border-radius:16px;overflow:hidden;height:140px;background:linear-gradient(135deg,#2b2f45,#171925);">
+          <div id="scratchReward" style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;color:#fff;">
+            <div style="font-size:11px;color:var(--p-muted);">YOU WON</div>
+            <div id="scratchAmount" style="font-size:26px;font-weight:800;margin-top:2px;"></div>
+          </div>
+          <canvas id="scratchCanvas" style="position:absolute;inset:0;width:100%;height:100%;${usedUp ? "cursor:default;" : "cursor:pointer;touch-action:none;"}"></canvas>
+        </div>
+        <div id="scratchResult"></div>
+        <div class="survey-limit">${usedUp ? "You have reached today's scratch card limit." : `${CFG.dailyScratchLimit - PROGRESS.scratches} card${CFG.dailyScratchLimit - PROGRESS.scratches === 1 ? "" : "s"} remaining today.`}</div>
+      </div>
+    </div>
+  `;
+  document.getElementById("scBack").addEventListener("click", () => navigate("home"));
+
+  const reward = CFG.scratchRewards[Math.floor(Math.random() * CFG.scratchRewards.length)];
+  document.getElementById("scratchAmount").textContent = fmt(reward) + " USDT";
+
+  if (usedUp) return;
+
+  const canvas = document.getElementById("scratchCanvas");
+  const wrap = document.getElementById("scratchWrap");
+  const ctx = canvas.getContext("2d");
+  let revealed = false;
+
+  function setupCanvas() {
+    const rect = wrap.getBoundingClientRect();
+    canvas.width = rect.width;
+    canvas.height = rect.height;
+    ctx.fillStyle = "#9aa0ad";
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.fillStyle = "rgba(255,255,255,.35)";
+    ctx.font = "600 13px -apple-system, Arial";
+    ctx.textAlign = "center";
+    ctx.fillText("SCRATCH HERE", canvas.width / 2, canvas.height / 2 + 5);
+    ctx.globalCompositeOperation = "destination-out";
+  }
+  setupCanvas();
+
+  function scratchAt(x, y) {
+    ctx.beginPath();
+    ctx.arc(x, y, 22, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  function pointFromEvent(e) {
+    const rect = canvas.getBoundingClientRect();
+    const t = e.touches ? e.touches[0] : e;
+    return { x: t.clientX - rect.left, y: t.clientY - rect.top };
+  }
+
+  function checkRevealPercent() {
+    const data = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
+    let cleared = 0;
+    for (let i = 3; i < data.length; i += 4 * 20) { if (data[i] === 0) cleared++; }
+    return cleared / (data.length / (4 * 20));
+  }
+
+  function onReveal() {
+    if (revealed) return;
+    revealed = true;
+    canvas.style.transition = "opacity .3s";
+    canvas.style.opacity = "0";
+    setTimeout(() => { canvas.style.display = "none"; }, 300);
+    document.getElementById("scratchResult").innerHTML =
+      `<button class="survey-submit" id="claimScratchBtn" style="margin-top:12px;"><span>Watch ad to claim</span></button>`;
+    document.getElementById("claimScratchBtn").addEventListener("click", async () => {
+      const ok = await showRewardedAd();
+      if (ok) {
+        await addBalance(reward);
+        await saveProgress("scratches", PROGRESS.scratches + 1);
+        await addTx(uid, "scratch", reward, "Scratch card reward");
+        renderScratch();
+      }
+    });
+  }
+
+  let dragging = false;
+  const start = e => { dragging = true; const p = pointFromEvent(e); scratchAt(p.x, p.y); };
+  const move = e => {
+    if (!dragging || revealed) return;
+    e.preventDefault();
+    const p = pointFromEvent(e);
+    scratchAt(p.x, p.y);
+    if (checkRevealPercent() > 0.45) onReveal();
+  };
+  const end = () => { dragging = false; };
+
+  canvas.addEventListener("mousedown", start);
+  canvas.addEventListener("mousemove", move);
+  window.addEventListener("mouseup", end);
+  canvas.addEventListener("touchstart", start, { passive: true });
+  canvas.addEventListener("touchmove", move, { passive: false });
+  canvas.addEventListener("touchend", end);
+}
+
+function renderCheckin() {
+  const day = Math.min(PROGRESS.checkinStreak || 1, 7);
+  const reward = CFG.checkinRewards[day - 1] || CFG.checkinRewards[0];
+  const dayLabels = CFG.checkinRewards.map((r, i) => {
+    const dNum = i + 1;
+    const done = dNum < day || (dNum === day && PROGRESS.checkin);
+    const current = dNum === day && !PROGRESS.checkin;
+    return `<div style="flex:1;text-align:center;padding:8px 2px;border-radius:10px;background:${done ? "rgba(52,199,89,.15)" : current ? "rgba(0,122,255,.15)" : "rgba(118,118,128,.13)"};">
+      <div style="font-size:10px;color:var(--p-muted);">Day ${dNum}</div>
+      <div style="font-size:13px;margin-top:2px;">${done ? "✓" : current ? "●" : "–"}</div>
+    </div>`;
+  }).join("");
+  app.innerHTML = `
+    <div class="survey-page">
+      <div class="survey-top">
+        <button class="survey-back" id="ciBack" aria-label="Back">‹</button>
+        <div class="survey-heading">
+          <h1>Daily check-in</h1>
+          <p>Come back every day for a bigger reward</p>
+        </div>
+      </div>
+
+      <div class="survey-hero">
+        <div class="survey-hero-row">
+          <div class="survey-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="3"/><path d="M7 3v4M17 3v4M3 10h18M8 14h3M8 17h5"/></svg>
+          </div>
+          <div><h2>Day ${day} reward</h2><div class="sub">Keep your streak going.</div></div>
+          <div class="survey-reward"><b>+${fmt(reward)}</b><span>USDT reward</span></div>
+        </div>
+        <div style="display:flex;gap:6px;margin-top:14px;">${dayLabels}</div>
+      </div>
+
+      <div class="survey-section">
+        <button class="survey-submit" id="checkinBtn" type="button" ${PROGRESS.checkin ? "disabled" : ""}>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m10 8 6 4-6 4V8Z"/><rect x="2" y="5" width="20" height="14" rx="3"/></svg>
+          <span>${PROGRESS.checkin ? "Already checked in today" : "Watch ad to claim"}</span>
+        </button>
+      </div>
+    </div>
+  `;
+  document.getElementById("ciBack").addEventListener("click", () => navigate("home"));
+  document.getElementById("checkinBtn")?.addEventListener("click", async () => {
+    const ok = await showRewardedAd();
+    if (ok) {
+      await addBalance(reward);
+      await saveProgress("checkin", true);
+      await addTx(uid, "checkin", reward, "Daily check-in day " + day);
+      renderCheckin();
+    }
+  });
+}
+
+function renderMath() {
+  const a = Math.floor(Math.random() * 40) + 5;
+  const b = Math.floor(Math.random() * 40) + 5;
+  const correct = a + b;
+  let opts = [correct, correct + 2, correct - 3, correct + 5].sort(() => Math.random() - 0.5);
+  app.innerHTML = `
+    <div class="survey-page">
+      <div class="survey-top">
+        <button class="survey-back" id="mathBack" aria-label="Back">‹</button>
+        <div class="survey-heading">
+          <h1>Math challenge</h1>
+          <p>Answer correctly to earn a reward</p>
+        </div>
+      </div>
+
+      <div class="survey-hero">
+        <div class="survey-hero-row">
+          <div class="survey-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="2" width="16" height="20" rx="3"/><path d="M8 6h8M8 11h2M14 11h2M8 15h2M14 15h2"/></svg>
+          </div>
+          <div><h2>${a} + ${b} = ?</h2><div class="sub">Pick the correct answer below.</div></div>
+          <div class="survey-reward"><b>+${fmt(CFG.mathReward)}</b><span>USDT reward</span></div>
+        </div>
+      </div>
+
+      <div class="survey-section">
+        <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:10px;" id="mathOpts">
+          ${opts.map(o => `<button class="survey-open opt" style="justify-content:center;">${o}</button>`).join("")}
+        </div>
+        <div id="mathResult"></div>
+      </div>
+    </div>
+  `;
+  document.getElementById("mathBack").addEventListener("click", () => navigate("home"));
+  document.querySelectorAll(".opt").forEach(btn => btn.addEventListener("click", async function () {
+    const val = Number(this.textContent);
+    document.querySelectorAll(".opt").forEach(b => b.disabled = true);
+    if (val === correct) {
+      document.getElementById("mathResult").innerHTML =
+        `<button class="survey-submit" id="claimMathBtn" style="margin-top:12px;"><span>Watch ad to claim ${fmt(CFG.mathReward)} USDT</span></button>`;
+      document.getElementById("claimMathBtn").addEventListener("click", async () => {
+        const ok = await showRewardedAd();
+        if (ok) {
+          await addBalance(CFG.mathReward);
+          await addTx(uid, "math", CFG.mathReward, "Math challenge correct");
+          renderMath();
+        }
+      });
+    } else {
+      document.getElementById("mathResult").innerHTML =
+        `<div class="survey-note"><span>Wrong answer - no reward this time.</span></div>
+         <button class="survey-open" id="nextMathBtn" style="margin-top:8px;justify-content:center;"><span>Try another</span></button>`;
+      document.getElementById("nextMathBtn").addEventListener("click", renderMath);
+    }
+  }));
+}
+
+async function fetchTriviaQuestion() {
+  try {
+    const res = await fetch("https://opentdb.com/api.php?amount=1&difficulty=hard&type=multiple");
+    const data = await res.json();
+    const q = data.results[0];
+    const decode = (s) => { const t = document.createElement("textarea"); t.innerHTML = s; return t.value; };
+    const options = [...q.incorrect_answers.map(decode), decode(q.correct_answer)].sort(() => Math.random() - 0.5);
+    return { question: decode(q.question), correct: decode(q.correct_answer), options };
+  } catch (e) {
+    return { question: "What is the capital of Bangladesh?", correct: "Dhaka", options: ["Chittagong", "Dhaka", "Khulna", "Sylhet"] };
+  }
+}
+
+async function renderQuiz() {
+  const usedUp = PROGRESS.quiz >= CFG.dailyQuizLimit;
+  app.innerHTML = `
+    <div class="survey-page">
+      <div class="survey-top">
+        <button class="survey-back" id="quizBack" aria-label="Back">‹</button>
+        <div class="survey-heading">
+          <h1>Quiz</h1>
+          <p>Hard questions, fetched fresh each time</p>
+        </div>
+      </div>
+      <div class="survey-section" id="quizBody">${usedUp ? `<div class="survey-note"><span>Daily quiz limit reached.</span></div>` : "Loading question..."}</div>
+    </div>
+  `;
+  document.getElementById("quizBack").addEventListener("click", () => navigate("home"));
+  if (usedUp) return;
+  const q = await fetchTriviaQuestion();
+  document.getElementById("quizBody").innerHTML = `
+    <div class="survey-section-title"><div class="dot">?</div><b>Question</b><span>${PROGRESS.quiz} / ${CFG.dailyQuizLimit} used</span></div>
+    <div style="font-size:13px;font-weight:600;margin-bottom:12px;">${q.question}</div>
+    <div style="display:flex;flex-direction:column;gap:8px;" id="quizOpts">
+      ${q.options.map(o => `<button class="survey-open opt">${o}</button>`).join("")}
+    </div>
+    <div id="quizResult"></div>
+  `;
+  document.querySelectorAll(".opt").forEach(btn => btn.addEventListener("click", async function () {
+    document.querySelectorAll(".opt").forEach(b => b.disabled = true);
+    await saveProgress("quiz", PROGRESS.quiz + 1);
+    if (this.textContent === q.correct) {
+      document.getElementById("quizResult").innerHTML =
+        `<button class="survey-submit" id="claimQuizBtn" style="margin-top:12px;"><span>Watch ad to claim ${fmt(CFG.quizReward)} USDT</span></button>`;
+      document.getElementById("claimQuizBtn").addEventListener("click", async () => {
+        const ok = await showRewardedAd();
+        if (ok) {
+          await addBalance(CFG.quizReward);
+          await addTx(uid, "quiz", CFG.quizReward, "Quiz correct answer");
+          renderQuiz();
+        }
+      });
+    } else {
+      document.getElementById("quizResult").innerHTML =
+        `<div class="survey-note"><span>Wrong answer - no reward.</span></div>
+         <button class="survey-open" id="nextQuizBtn" style="margin-top:8px;"><span>Next question</span></button>`;
+      document.getElementById("nextQuizBtn").addEventListener("click", renderQuiz);
+    }
+  }));
+}
+
+function renderChannelTasks() {
+  app.innerHTML = `
+    <div class="survey-page">
+      <div class="survey-top">
+        <button class="survey-back" id="ctBack" aria-label="Back">‹</button>
+        <div class="survey-heading">
+          <h1>Join channels</h1>
+          <p>Join and verify to earn a reward</p>
+        </div>
+      </div>
+      <div id="ctList" class="survey-section">Loading...</div>
+    </div>
+  `;
+  document.getElementById("ctBack").addEventListener("click", () => navigate("home"));
+  loadChannelTaskList();
+}
+
+async function loadChannelTaskList() {
+  const q = query(collection(db, "channelTasks"), where("status", "==", "active"));
+  const snap = await getDocs(q);
+  const list = document.getElementById("ctList");
+  const tasks = snap.docs.map(d => ({ id: d.id, ...d.data() })).filter(t => (t.joinsRemaining ?? 1) > 0);
+  if (!tasks.length) {
+    list.innerHTML = `<div class="survey-note"><span>No channels to join right now. Check back later.</span></div>`;
+    return;
+  }
+  // Check which ones this user already claimed
+  const claimSnap = await getDocs(query(collection(db, "channelJoinClaims"), where("telegramId", "==", uid)));
+  const claimedIds = new Set(claimSnap.docs.map(d => d.data().taskId));
+
+  list.innerHTML = tasks.map(t => {
+    const already = claimedIds.has(t.id);
+    return `
+      <div class="survey-rule" style="align-items:center;">
+        <span class="survey-rule-num">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M8 12h8M12 8v8"/><circle cx="12" cy="12" r="9"/></svg>
+        </span>
+        <div style="flex:1;">
+          <b>${t.title || t.channelUsername}</b><br>
+          <span style="color:var(--p-muted);font-size:11px;">Reward: ${fmt(t.rewardPerJoin)} USDT &middot; ${t.joinsRemaining} left</span>
+        </div>
+      </div>
+      <div style="display:flex;gap:8px;margin:8px 0 16px;">
+        <button class="btn btn-secondary ctJoinBtn" data-link="${t.channelLink}" style="flex:1;">Open channel</button>
+        <button class="btn btn-primary ctVerifyBtn" data-id="${t.id}" data-username="${t.channelUsername}" data-reward="${t.rewardPerJoin}" style="flex:1;" ${already ? "disabled" : ""}>
+          ${already ? "Already claimed" : "Verify & claim"}
+        </button>
+      </div>
+    `;
+  }).join("");
+
+  document.querySelectorAll(".ctJoinBtn").forEach(b => b.addEventListener("click", () => {
+    const link = b.dataset.link;
+    tg?.openTelegramLink ? tg.openTelegramLink(link) : window.open(link, "_blank");
+  }));
+
+  document.querySelectorAll(".ctVerifyBtn").forEach(b => b.addEventListener("click", async () => {
+    if (!CFG.cloudFunctionUrl) return alert("Verification is not set up yet - admin needs to add the Cloud Function URL.");
+    b.disabled = true;
+    b.textContent = "Checking...";
+    try {
+      const res = await fetch(CFG.cloudFunctionUrl.replace(/\/$/, "") + "/checkMembership", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ channelUsername: b.dataset.username, telegramId: uid })
+      });
+      const data = await res.json();
+      if (!data.joined) {
+        alert("You haven't joined that channel yet.");
+        b.disabled = false; b.textContent = "Verify & claim";
+        return;
+      }
+      const reward = Number(b.dataset.reward);
+      const id = b.dataset.id;
+      await addDoc(collection(db, "channelJoinClaims"), { taskId: id, telegramId: uid, claimedAt: serverTimestamp() });
+      await updateDoc(doc(db, "channelTasks", id), { joinsRemaining: increment(-1) });
+      await addBalance(reward);
+      await addTx(uid, "channel_join", reward, "Joined channel task");
+      b.textContent = "Claimed";
+      alert("Verified! " + fmt(reward) + " USDT added to your balance.");
+    } catch (e) {
+      console.error(e);
+      alert("Could not verify right now. Try again later.");
+      b.disabled = false; b.textContent = "Verify & claim";
+    }
+  }));
+}
+
+function renderAddTask() {
+  app.innerHTML = `
+    <div class="survey-page">
+      <div class="survey-top">
+        <button class="survey-back" id="atBack" aria-label="Back">‹</button>
+        <div class="survey-heading">
+          <h1>Add my channel</h1>
+          <p>Promote your channel and pay per real join</p>
+        </div>
+      </div>
+
+      <div class="survey-section">
+        <div class="survey-section-title"><div class="dot">✓</div><b>Rules</b><span>Read before adding</span></div>
+        <div class="survey-rules">
+          <div class="survey-rule"><span class="survey-rule-num">1</span><div><b>Add the bot as admin</b><br>Add this app's bot as an admin of your channel/group first - without this, joins can't be verified.</div></div>
+          <div class="survey-rule"><span class="survey-rule-num">2</span><div><b>Set a fair reward</b><br>Minimum reward per join is ${fmt(CFG.minChannelTaskReward)} USDT.</div></div>
+          <div class="survey-rule"><span class="survey-rule-num">3</span><div><b>Choose how you pay</b><br>Pay from your app balance to go live instantly, or pay separately (e.g. Binance) and wait for admin approval.</div></div>
+        </div>
+      </div>
+
+      <div class="survey-section">
+        <div class="survey-section-title"><div class="dot">↗</div><b>Channel details</b><span>Step 1</span></div>
+        <div class="survey-field-label">CHANNEL LINK</div>
+        <div class="survey-input-wrap"><input class="survey-input" id="atLink" placeholder="https://t.me/yourchannel" /></div>
+        <div class="survey-field-label">CHANNEL USERNAME (without @)</div>
+        <div class="survey-input-wrap"><input class="survey-input" id="atUsername" placeholder="yourchannel" /></div>
+        <div class="survey-field-label">REWARD PER JOIN (USDT)</div>
+        <div class="survey-input-wrap"><input class="survey-input" id="atReward" inputmode="decimal" placeholder="${fmt(CFG.minChannelTaskReward)}" /></div>
+        <div class="survey-field-label">HOW MANY JOINS TO FUND</div>
+        <div class="survey-input-wrap"><input class="survey-input" id="atJoins" inputmode="numeric" placeholder="e.g. 100" /></div>
+        <div class="survey-field-label">PAYMENT METHOD</div>
+        <select id="atMethod" style="width:100%;">
+          <option value="balance">Pay from my app balance (goes live instantly)</option>
+          <option value="external">Pay separately - Binance (needs admin approval)</option>
+        </select>
+        <div id="atCost" class="survey-note"><span>Enter a reward and a number of joins to see the total cost.</span></div>
+        <button class="survey-submit" id="atSubmit" type="button" style="margin-top:12px;">
+          <span>Submit channel</span>
+        </button>
+      </div>
+    </div>
+  `;
+  document.getElementById("atBack").addEventListener("click", () => navigate("profile"));
+
+  const updateCost = () => {
+    const reward = parseFloat(document.getElementById("atReward").value) || 0;
+    const joins = parseInt(document.getElementById("atJoins").value) || 0;
+    document.getElementById("atCost").innerHTML = `<span>Total cost: <b>${fmt(reward * joins)} USDT</b> for ${joins || 0} joins</span>`;
+  };
+  document.getElementById("atReward").addEventListener("input", updateCost);
+  document.getElementById("atJoins").addEventListener("input", updateCost);
+
+  document.getElementById("atSubmit").addEventListener("click", async () => {
+    const link = document.getElementById("atLink").value.trim();
+    const username = document.getElementById("atUsername").value.trim().replace(/^@/, "");
+    const reward = parseFloat(document.getElementById("atReward").value);
+    const joins = parseInt(document.getElementById("atJoins").value);
+    const method = document.getElementById("atMethod").value;
+
+    if (!link || !username) return alert("Enter the channel link and username.");
+    if (!reward || reward < CFG.minChannelTaskReward) return alert(`Reward must be at least ${fmt(CFG.minChannelTaskReward)} USDT.`);
+    if (!joins || joins < 1) return alert("Enter how many joins to fund.");
+    const total = reward * joins;
+
+    if (method === "balance") {
+      if (total > USER.balance) return alert("Your balance isn't enough for this budget.");
+      await addDoc(collection(db, "channelTasks"), {
+        title: username, channelLink: link, channelUsername: username,
+        rewardPerJoin: reward, joinsRemaining: joins, ownerUid: uid,
+        paymentType: "balance", status: "active", createdAt: serverTimestamp()
+      });
+      await addBalance(-total);
+      await addTx(uid, "add_task", -total, "Funded channel task: " + username);
+      alert("Your channel is live now.");
+    } else {
+      await addDoc(collection(db, "channelTasks"), {
+        title: username, channelLink: link, channelUsername: username,
+        rewardPerJoin: reward, joinsRemaining: joins, ownerUid: uid,
+        paymentType: "external", status: "pending_payment", createdAt: serverTimestamp()
+      });
+      alert("Submitted. Send the payment as instructed by admin - your channel goes live after approval.");
+    }
+    navigate("profile");
+  });
+}
+
+function renderProfile() {
+  app.innerHTML = `
+    <div class="survey-page">
+      <div class="survey-top">
+        <div class="survey-heading">
+          <h1>Profile</h1>
+          <p>Your account and channel promotion</p>
+        </div>
+      </div>
+
+      <div class="survey-hero">
+        <div class="survey-hero-row">
+          <div class="survey-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 3.5-7 8-7s8 3 8 7"/></svg>
+          </div>
+          <div>
+            <h2>${USER.firstName || "User"}</h2>
+            <p class="sub">${USER.username ? "@" + USER.username : "Telegram ID: " + uid}</p>
+          </div>
+        </div>
+        <div class="survey-stats">
+          <div class="survey-stat"><small>BALANCE</small><strong>${fmt(USER.balance)} USDT</strong></div>
+          <div class="survey-stat"><small>REFERRALS</small><strong>${USER.referralCount || 0}</strong></div>
+        </div>
+      </div>
+
+      <div class="survey-section">
+        <div class="survey-section-title"><div class="dot">
+          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 12h8M12 8v8"/><circle cx="12" cy="12" r="9"/></svg>
+        </div><b>Promote your channel</b><span>Pay per join</span></div>
+        <p style="font-size:11px;color:var(--p-muted);line-height:1.5;margin:0 0 12px;">
+          Add your Telegram channel or group here - other users will join it for a reward you set, and you only pay for real, verified joins.
+        </p>
+        <button class="survey-open" id="goAddTask" type="button">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
+          <span>Add my channel</span>
+          <svg class="arrow" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg>
+        </button>
+      </div>
+    </div>
+  `;
+  document.getElementById("goAddTask").addEventListener("click", () => navigate("addTask"));
+}
+
+function renderRefer() {
+  app.innerHTML = `
+    <div class="survey-page">
+      <div class="survey-top">
+        <button class="survey-back" id="referBack" aria-label="Back">‹</button>
+        <div class="survey-heading">
+          <h1>Refer & earn</h1>
+          <p>Invite friends and earn together</p>
+        </div>
+      </div>
+
+      <div class="survey-hero">
+        <div class="survey-hero-row">
+          <div class="survey-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M16 21v-2a4 4 0 0 0-4-4H7a4 4 0 0 0-4 4v2"/><circle cx="9.5" cy="7" r="4"/><path d="M17 11a4 4 0 1 0-1-7.9M21 21v-2a4 4 0 0 0-3-3.87"/></svg>
+          </div>
+          <div><h2>Invite a friend</h2><div class="sub">Earn a bonus for every real referral.</div></div>
+          <div class="survey-reward"><b>+${fmt(CFG.referralBonus)}</b><span>USDT / referral</span></div>
+        </div>
+        <div class="survey-stats">
+          <div class="survey-stat"><small>Total referrals</small><strong>${USER.referralCount || 0}</strong></div>
+          <div class="survey-stat"><small>USDT earned</small><strong>${fmt((USER.referralCount || 0) * CFG.referralBonus)}</strong></div>
+        </div>
+      </div>
+
+      <div class="survey-section">
+        <div class="survey-section-title"><div class="dot">↗</div><b>Your invite link</b><span>Share it</span></div>
+        <div class="survey-input-wrap">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 13a5 5 0 0 0 7 0l3-3a5 5 0 0 0-7-7l-1 1"/><path d="M14 11a5 5 0 0 0-7 0l-3 3a5 5 0 0 0 7 7l1-1"/></svg>
+          <input class="survey-input" readonly value="https://t.me/${CFG.botUsername || "YOUR_BOT"}?start=${uid}" id="refLink" />
+        </div>
+        <button class="survey-submit" id="shareBtn" type="button">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 12v7a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-7M16 6l-4-4-4 4M12 2v13"/></svg>
+          <span>Share invite link</span>
+        </button>
+      </div>
+    </div>
+  `;
+  document.getElementById("referBack").addEventListener("click", () => navigate("home"));
+  document.getElementById("shareBtn").addEventListener("click", () => {
+    const link = document.getElementById("refLink").value;
+    tg?.openTelegramLink
+      ? tg.openTelegramLink(`https://t.me/share/url?url=${encodeURIComponent(link)}`)
+      : navigator.clipboard?.writeText(link);
+  });
+}
+
+async function renderWithdraw() {
+  const req = CFG.withdrawRequiredTasks;
+  const checks = [
+    { key:"ads", label:`Watch ${req.ads} ads`, sub:"Complete today's ad requirement", done:PROGRESS.ads >= req.ads, icon:`<svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>` },
+    { key:"checkin", label:"Daily check-in", sub:"Complete your daily check-in", done:!req.checkin || PROGRESS.checkin, icon:`<svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="16" rx="3"/><path d="M7 3v4M17 3v4M3 10h18"/></svg>` },
+    { key:"surveys", label:`Complete ${req.surveys} survey`, sub:"Submit the required survey", done:PROGRESS.surveys >= req.surveys, icon:`<svg viewBox="0 0 24 24"><rect x="5" y="3" width="14" height="18" rx="2"/><path d="M8 7h8M8 11h8M8 15h5"/></svg>` },
+    { key:"quiz", label:`Answer ${req.quiz} quiz questions`, sub:"Answer the required questions", done:PROGRESS.quiz >= req.quiz, icon:`<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M9.5 9a2.5 2.5 0 1 1 4.2 1.8c-1.2 1-1.7 1.4-1.7 2.7M12 17h.01"/></svg>` }
+  ];
+  const completed = checks.filter(c => c.done).length;
+  const progress = Math.round((completed / checks.length) * 100);
+  const allDone = completed === checks.length;
+
+  app.innerHTML = `
+    <div class="survey-page">
+      <div class="survey-top">
+        <button class="survey-back" id="wBack" aria-label="Back">‹</button>
+        <div class="survey-heading">
+          <h1>Withdraw</h1>
+          <p>Cash out your USDT balance</p>
+        </div>
+      </div>
+
+    <div class="withdraw-hero">
+      <div class="withdraw-title">Available balance</div>
+      <div class="withdraw-balance">${fmt(USER.balance)} <span style="font-size:13px;font-weight:700;opacity:.82">USDT</span></div>
+      <div class="withdraw-sub">${allDone ? "You're ready to request a withdrawal." : "Complete the requirements below to unlock withdrawal."}</div>
+    </div>
+
+    <div class="require-box">
+      <div class="require-head">
+        <div>
+          <strong>Withdrawal requirements</strong>
+          <div style="font-size:10px;color:var(--p-muted);margin-top:3px">${completed} of ${checks.length} completed</div>
+        </div>
+        ${allDone
+          ? `<span class="success-pill"><svg viewBox="0 0 24 24"><path d="m6 12 4 4 8-9"/></svg>Ready</span>`
+          : `<span style="font-size:12px;font-weight:700;color:var(--p-blue)">${progress}%</span>`}
+      </div>
+      <div class="progress-track"><div class="progress-fill" style="width:${progress}%"></div></div>
+
+      ${checks.map(c => `
+        <div class="req-item ${c.done ? "done" : ""}">
+          <div class="req-icon">${c.icon}</div>
+          <div class="req-copy"><b>${c.label}</b><small>${c.sub}</small></div>
+          <div class="req-status ${c.done ? "done" : "todo"}">${c.done ? "✓" : "○"}</div>
+        </div>
+      `).join("")}
+    </div>
+
+    <div class="withdraw-form">
+      <div class="form-title">Withdrawal details</div>
+
+      <div class="field-label">AMOUNT</div>
+      <input id="wAmount" placeholder="Enter USDT amount" inputmode="decimal" ${allDone ? "" : "disabled"} />
+
+      <div class="field-label">PAYMENT METHOD</div>
+      <select id="wMethod" ${allDone ? "" : "disabled"}>
+        <option value="Binance">Binance (USDT)</option>
+        <option value="Bkash">Bkash</option>
+        <option value="Nagad">Nagad</option>
+      </select>
+
+      <div class="field-label">ACCOUNT / WALLET</div>
+      <input id="wAccount" placeholder="Enter Binance UID / wallet / number" ${allDone ? "" : "disabled"} />
+
+      ${!allDone ? `
+        <div class="withdraw-lock">
+          <svg viewBox="0 0 24 24"><rect x="5" y="10" width="14" height="11" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg>
+          <span>Complete all requirements above before submitting a withdrawal request.</span>
+        </div>
+      ` : `
+        <div style="margin-top:12px;font-size:10px;color:var(--p-muted);line-height:1.45">
+          Minimum withdrawal: <b style="color:var(--p-text)">${fmt(CFG.minWithdraw)} USDT</b>
+        </div>
+      `}
+
+      <button class="btn btn-primary" id="wSubmit" style="margin-top:14px" ${allDone ? "" : "disabled"}>
+        ${allDone ? "Request withdrawal" : "Complete requirements first"}
+      </button>
+    </div>
+    </div>
+  `;
+
+  document.getElementById("wBack").addEventListener("click", () => navigate("home"));
+
+  document.getElementById("wSubmit")?.addEventListener("click", async () => {
+    const amount = parseFloat(document.getElementById("wAmount").value);
+    const method = document.getElementById("wMethod").value;
+    const account = document.getElementById("wAccount").value.trim();
+    if (!amount || amount < CFG.minWithdraw || amount > USER.balance) return alert("Invalid amount.");
+    if (!account) return alert("Enter your account / wallet address.");
+
+    const btn = document.getElementById("wSubmit");
+    btn.disabled = true;
+    btn.textContent = "Checking device...";
+    const deviceResult = await runDeviceCheckOrBan();
+    if (!deviceResult.ok) {
+      renderBanned();
+      return;
+    }
+
+    await addDoc(collection(db, "withdrawals"), {
+      telegramId: uid, amount, method, account, status: "pending", requestedAt: serverTimestamp()
+    });
+    await addBalance(-amount);
+    alert("Withdraw request submitted.");
+    renderWithdraw();
+  });
+}
+
+async function renderHistory() {
+  app.innerHTML = `
+    <div class="survey-page">
+      <div class="survey-top">
+        <button class="survey-back" id="histBack" aria-label="Back">‹</button>
+        <div class="survey-heading">
+          <h1>History</h1>
+          <p>Your last 30 activities</p>
+        </div>
+      </div>
+      <div class="survey-section" id="histList">Loading...</div>
+    </div>
+  `;
+  document.getElementById("histBack").addEventListener("click", () => navigate("home"));
+  const q = query(collection(db, "transactions"), where("telegramId", "==", uid), orderBy("createdAt", "desc"), limit(30));
+  const snap = await getDocs(q);
+  if (snap.empty) {
+    document.getElementById("histList").innerHTML = `<div class="survey-note"><span>No activity yet.</span></div>`;
+    return;
+  }
+  document.getElementById("histList").innerHTML = snap.docs.map(d => {
+    const t = d.data();
+    return `<div class="survey-rule" style="align-items:center;">
+      <div style="flex:1;">${t.note || t.type}</div>
+      <div style="color:${t.amount >= 0 ? "#34c759" : "#ff3b30"};font-weight:700;font-size:13px;">${t.amount >= 0 ? "+" : ""}${fmt(t.amount)}</div>
+    </div>`;
+  }).join("");
+}
+
+function navigate(view) {
+  document.querySelectorAll(".navItem").forEach(n => n.classList.toggle("active", n.dataset.view === view));
+  if (["home","survey","spin","scratch","checkin","math","quiz"].includes(view) && ["refer","withdraw","history"].some(v => document.querySelector(`.navItem[data-view=${v}]`)?.classList.contains("active"))) {
+    document.querySelectorAll(".navItem").forEach(n => n.classList.toggle("active", n.dataset.view === "home"));
+  }
+  if (view === "home") renderHome();
+  else if (view === "survey") renderSurvey();
+  else if (view === "spin") renderSpin();
+  else if (view === "scratch") renderScratch();
+  else if (view === "checkin") renderCheckin();
+  else if (view === "math") renderMath();
+  else if (view === "quiz") renderQuiz();
+  else if (view === "refer") renderRefer();
+  else if (view === "withdraw") renderWithdraw();
+  else if (view === "history") renderHistory();
+  else if (view === "channelTasks") renderChannelTasks();
+  else if (view === "addTask") renderAddTask();
+  else if (view === "profile") renderProfile();
+}
+
+document.querySelectorAll("#bottomNav .navItem").forEach(el =>
+  el.addEventListener("click", () => navigate(el.dataset.view))
+);
+
+function renderBanned() {
+  document.getElementById("bottomNav").classList.add("hidden");
+  app.innerHTML = `
+    <div style="padding:60px 24px;text-align:center;">
+      <div class="survey-icon" style="margin:0 auto 16px;">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="m4.9 4.9 14.2 14.2"/></svg>
+      </div>
+      <h2 style="margin:0 0 8px;">Account suspended</h2>
+      <p style="color:var(--p-muted);font-size:13px;">Multiple accounts were detected on this device. Contact support if you think this is a mistake.</p>
+    </div>
+  `;
+}
+
+(async function init() {
+  await loadConfig();
+  await loadMonetagSDK(CFG.monetagZoneId);
+  await loadUser();
+  if (USER.banned) { renderBanned(); return; }
+  await loadProgress();
+  navigate("home");
+  startAutoAdLoop();
+})();
+</script>
+</body>
+</html>

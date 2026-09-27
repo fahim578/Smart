@@ -1,0 +1,305 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Admin panel</title>
+<style>
+  body { margin:0; font-family: -apple-system, Roboto, Arial, sans-serif; background:#0f0f14; color:#fff; padding:16px; }
+  .card { background:#1a1a22; border-radius:14px; padding:14px 16px; margin-bottom:14px; }
+  .row { display:flex; align-items:center; justify-content:space-between; padding:8px 0; border-bottom:1px solid #24242e; }
+  input { padding:8px; border-radius:8px; border:1px solid #2c2c38; background:#111117; color:#fff; width:100px; text-align:right; }
+  button { border:none; border-radius:10px; padding:12px; font-weight:600; background:#6b5ce7; color:#fff; width:100%; cursor:pointer; }
+  h2 { font-size:16px; font-weight:600; }
+  .hidden { display:none !important; }
+  .small-btn { background:#24242e; padding:6px 10px; border-radius:8px; font-size:12px; }
+</style>
+</head>
+<body>
+
+<div id="loginBox" class="card">
+  <h2>Admin login</h2>
+  <input id="email" placeholder="Email" style="width:100%;text-align:left;margin-bottom:8px;" />
+  <input id="pass" type="password" placeholder="Password" style="width:100%;text-align:left;margin-bottom:8px;" />
+  <button id="loginBtn">Log in</button>
+</div>
+
+<div id="panel" class="hidden">
+  <div class="card">
+    <h2>Reward per task (USDT)</h2>
+    <div class="row"><span>Watch ad</span><input id="adReward" /></div>
+    <div class="row"><span>Survey</span><input id="surveyReward" /></div>
+    <div class="row"><span>Math challenge</span><input id="mathReward" /></div>
+    <div class="row"><span>Quiz</span><input id="quizReward" /></div>
+    <div class="row"><span>Referral bonus</span><input id="referralBonus" /></div>
+    <div class="row"><span>Minimum withdraw</span><input id="minWithdraw" /></div>
+  </div>
+
+  <div class="card">
+    <h2>Daily limits</h2>
+    <div class="row"><span>Ads per day</span><input id="dailyAdLimit" /></div>
+    <div class="row"><span>Spins per day</span><input id="dailySpinLimit" /></div>
+    <div class="row"><span>Scratch cards per day</span><input id="dailyScratchLimit" /></div>
+    <div class="row"><span>Surveys per day</span><input id="dailySurveyLimit" /></div>
+    <div class="row"><span>Quiz per day</span><input id="dailyQuizLimit" /></div>
+  </div>
+
+  <div class="card">
+    <h2>Withdraw requirements</h2>
+    <div class="row"><span>Ads required</span><input id="reqAds" /></div>
+    <div class="row"><span>Surveys required</span><input id="reqSurveys" /></div>
+    <div class="row"><span>Quiz answers required</span><input id="reqQuiz" /></div>
+  </div>
+
+  <div class="card">
+    <h2>Ad networks</h2>
+    <div class="row"><span>Monetag zone ID</span></div>
+    <input id="monetagZoneId" placeholder="e.g. 123456" style="width:100%;text-align:left;margin-top:6px;" />
+    <p style="font-size:11px;color:#777;margin:6px 0 12px;">From Monetag dashboard → your app → Zone ID. The app loads Monetag's script and rewarded/auto-ad functions using this ID automatically - nothing to edit in the code.</p>
+
+    <div class="row"><span>Survey link (Adsterra / GigaPub)</span></div>
+    <input id="surveyLink" placeholder="https://..." style="width:100%;text-align:left;margin-top:6px;" />
+    <p style="font-size:11px;color:#777;margin:6px 0 12px;">The direct link opened on the Survey page. Paste your Adsterra or GigaPub direct link here - swap it any time.</p>
+
+    <div class="row" style="margin-top:4px;"><span>Auto ad popup interval (sec)</span><input id="autoAdIntervalSec" /></div>
+  </div>
+
+  <div class="card">
+    <h2>Bot</h2>
+    <div class="row"><span>Bot username (no @)</span></div>
+    <input id="botUsername" placeholder="yourbotname" style="width:100%;text-align:left;margin-top:6px;" />
+    <p style="font-size:11px;color:#777;margin:6px 0 0;">Used to build each user's referral link (t.me/yourbotname?start=...) on the Refer page.</p>
+  </div>
+
+  <div class="card">
+    <h2>Channel-join tasks</h2>
+    <div class="row"><span>Minimum reward per join (USDT)</span><input id="minChannelTaskReward" /></div>
+    <div class="row"><span>Cloud Function URL</span></div>
+    <input id="cloudFunctionUrl" placeholder="https://your-repl-name.username.repl.co" style="width:100%;text-align:left;margin-top:6px;" />
+    <p style="font-size:11px;color:#777;margin:6px 0 0;">This is what verifies real channel joins (your Replit server URL).</p>
+  </div>
+
+  <div class="card">
+    <h2>Anti multi-account device check</h2>
+    <div class="row">
+      <span>Check device at withdraw time</span>
+      <input type="checkbox" id="deviceCheckEnabled" style="width:20px;height:20px;" />
+    </div>
+    <p style="font-size:11px;color:#777;margin:6px 0 0;">Off by default. When on, if two accounts share the same device at withdraw time, all of them (including this one) get banned automatically.</p>
+  </div>
+
+  <div class="card">
+    <h2>Referral - required channels</h2>
+    <p style="font-size:11px;color:#777;margin:0 0 10px;">Leave all 3 blank to pay referral bonuses instantly (old behavior). Fill them in and the new user must verify joining all 3 before their referrer gets paid.</p>
+    <div class="row"><span>Channel 1 username</span></div>
+    <input id="refReqUsername1" placeholder="channelusername" style="width:100%;text-align:left;margin-bottom:6px;" />
+    <input id="refReqLink1" placeholder="https://t.me/channelusername" style="width:100%;text-align:left;margin-bottom:12px;" />
+    <div class="row"><span>Channel 2 username</span></div>
+    <input id="refReqUsername2" placeholder="channelusername" style="width:100%;text-align:left;margin-bottom:6px;" />
+    <input id="refReqLink2" placeholder="https://t.me/channelusername" style="width:100%;text-align:left;margin-bottom:12px;" />
+    <div class="row"><span>Channel 3 username</span></div>
+    <input id="refReqUsername3" placeholder="channelusername" style="width:100%;text-align:left;margin-bottom:6px;" />
+    <input id="refReqLink3" placeholder="https://t.me/channelusername" style="width:100%;text-align:left;" />
+  </div>
+
+  <button id="saveBtn" style="margin-bottom:20px;">Save settings</button>
+
+  <div class="card">
+    <h2>Pending survey submissions</h2>
+    <div id="surveyList">Loading...</div>
+  </div>
+
+  <div class="card">
+    <h2>Pending channel tasks (external payment)</h2>
+    <div id="channelTaskList">Loading...</div>
+  </div>
+
+  <div class="card">
+    <h2>Banned accounts</h2>
+    <div id="bannedList">Loading...</div>
+  </div>
+
+  <div class="card">
+    <h2>Pending withdrawals</h2>
+    <div id="withdrawList">Loading...</div>
+  </div>
+</div>
+
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-app.js";
+import {
+  getAuth, signInWithEmailAndPassword, onAuthStateChanged
+} from "https://www.gstatic.com/firebasejs/10.13.0/firebase-auth.js";
+import {
+  getFirestore, doc, getDoc, setDoc, updateDoc, increment,
+  collection, query, where, getDocs
+} from "https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js";
+
+// Same Firebase project as index.html
+const firebaseConfig = {
+  apiKey: "AIzaSyAwa8-kqkxSLt0d0Dj697rUw1L0GpL4COI",
+  authDomain: "smart-earning-23b42.firebaseapp.com",
+  projectId: "smart-earning-23b42",
+  storageBucket: "smart-earning-23b42.firebasestorage.app",
+  messagingSenderId: "45425574806",
+  appId: "1:45425574806:web:a6f1268dd4fe6da4aa53b7"
+};
+
+const app = initializeApp(firebaseConfig);
+const auth = getAuth(app);
+const db = getFirestore(app);
+
+document.getElementById("loginBtn").addEventListener("click", async () => {
+  try {
+    await signInWithEmailAndPassword(auth, document.getElementById("email").value, document.getElementById("pass").value);
+  } catch (e) {
+    alert("Login failed: " + e.message);
+  }
+});
+
+const fields = ["adReward","surveyReward","mathReward","quizReward","referralBonus","minWithdraw",
+  "dailyAdLimit","dailySpinLimit","dailyScratchLimit","dailySurveyLimit","dailyQuizLimit",
+  "surveyLink","autoAdIntervalSec","monetagZoneId","minChannelTaskReward","cloudFunctionUrl","botUsername"];
+const textFields = ["surveyLink","monetagZoneId","cloudFunctionUrl","botUsername"]; // saved as plain strings, not numbers
+
+async function loadSettings() {
+  const snap = await getDoc(doc(db, "config", "settings"));
+  const cfg = snap.exists() ? snap.data() : {};
+  fields.forEach(f => { if (cfg[f] !== undefined) document.getElementById(f).value = cfg[f]; });
+  document.getElementById("deviceCheckEnabled").checked = !!cfg.deviceCheckEnabled;
+  const gate = cfg.referralRequiredChannels || [];
+  [1, 2, 3].forEach(i => {
+    document.getElementById("refReqUsername" + i).value = gate[i - 1]?.username || "";
+    document.getElementById("refReqLink" + i).value = gate[i - 1]?.link || "";
+  });
+  const req = cfg.withdrawRequiredTasks || {};
+  document.getElementById("reqAds").value = req.ads ?? 5;
+  document.getElementById("reqSurveys").value = req.surveys ?? 1;
+  document.getElementById("reqQuiz").value = req.quiz ?? 3;
+}
+
+document.getElementById("saveBtn").addEventListener("click", async () => {
+  const data = {};
+  fields.forEach(f => {
+    const el = document.getElementById(f);
+    data[f] = textFields.includes(f) ? el.value : parseFloat(el.value);
+  });
+  data.deviceCheckEnabled = document.getElementById("deviceCheckEnabled").checked;
+  data.referralRequiredChannels = [1, 2, 3]
+    .map(i => ({
+      username: document.getElementById("refReqUsername" + i).value.trim().replace(/^@/, ""),
+      link: document.getElementById("refReqLink" + i).value.trim()
+    }))
+    .filter(c => c.username && c.link);
+  data.withdrawRequiredTasks = {
+    ads: parseInt(document.getElementById("reqAds").value),
+    surveys: parseInt(document.getElementById("reqSurveys").value),
+    quiz: parseInt(document.getElementById("reqQuiz").value),
+    checkin: true
+  };
+  await setDoc(doc(db, "config", "settings"), data, { merge: true });
+  alert("Settings saved.");
+});
+
+async function loadSurveySubmissions() {
+  const q = query(collection(db, "surveySubmissions"), where("status", "==", "pending"));
+  const snap = await getDocs(q);
+  const el = document.getElementById("surveyList");
+  if (snap.empty) { el.innerHTML = "<p style='color:#999;'>None pending.</p>"; return; }
+  el.innerHTML = snap.docs.map(d => {
+    const s = d.data();
+    return `<div class="row"><span>${s.telegramId} - ${s.accountNumber}</span>
+      <span>
+        <button class="small-btn" data-id="${d.id}" data-action="approve-survey">Approve</button>
+        <button class="small-btn" data-id="${d.id}" data-action="reject-survey">Reject</button>
+      </span></div>`;
+  }).join("");
+}
+
+async function loadWithdrawals() {
+  const q = query(collection(db, "withdrawals"), where("status", "==", "pending"));
+  const snap = await getDocs(q);
+  const el = document.getElementById("withdrawList");
+  if (snap.empty) { el.innerHTML = "<p style='color:#999;'>None pending.</p>"; return; }
+  el.innerHTML = snap.docs.map(d => {
+    const w = d.data();
+    return `<div class="row"><span>${w.telegramId} - ${w.amount} USDT (${w.method}: ${w.account})</span>
+      <span>
+        <button class="small-btn" data-id="${d.id}" data-action="approve-withdraw">Paid</button>
+        <button class="small-btn" data-id="${d.id}" data-action="reject-withdraw" data-amount="${w.amount}" data-uid="${w.telegramId}">Reject</button>
+      </span></div>`;
+  }).join("");
+}
+
+async function loadChannelTasks() {
+  const q = query(collection(db, "channelTasks"), where("status", "==", "pending_payment"));
+  const snap = await getDocs(q);
+  const el = document.getElementById("channelTaskList");
+  if (snap.empty) { el.innerHTML = "<p style='color:#999;'>None pending.</p>"; return; }
+  el.innerHTML = snap.docs.map(d => {
+    const t = d.data();
+    return `<div class="row"><span>${t.channelUsername} - owner ${t.ownerUid} - ${t.rewardPerJoin} x ${t.joinsRemaining} joins</span>
+      <span>
+        <button class="small-btn" data-id="${d.id}" data-action="approve-channel">Activate</button>
+        <button class="small-btn" data-id="${d.id}" data-action="reject-channel">Reject</button>
+      </span></div>`;
+  }).join("");
+}
+
+async function loadBanned() {
+  const q = query(collection(db, "users"), where("banned", "==", true));
+  const snap = await getDocs(q);
+  const el = document.getElementById("bannedList");
+  if (snap.empty) { el.innerHTML = "<p style='color:#999;'>No banned accounts.</p>"; return; }
+  el.innerHTML = snap.docs.map(d => {
+    const u = d.data();
+    return `<div class="row"><span>${u.telegramId} - ${u.firstName || ""} (${u.banReason || "banned"})</span>
+      <button class="small-btn" data-id="${d.id}" data-action="unban">Unban</button></div>`;
+  }).join("");
+}
+
+document.addEventListener("click", async (e) => {
+  const btn = e.target.closest("button[data-action]");
+  if (!btn) return;
+  const action = btn.dataset.action;
+  const id = btn.dataset.id;
+  if (action === "approve-survey") {
+    await updateDoc(doc(db, "surveySubmissions", id), { status: "approved" });
+    loadSurveySubmissions();
+  } else if (action === "reject-survey") {
+    await updateDoc(doc(db, "surveySubmissions", id), { status: "rejected" });
+    loadSurveySubmissions();
+  } else if (action === "approve-withdraw") {
+    await updateDoc(doc(db, "withdrawals", id), { status: "paid" });
+    loadWithdrawals();
+  } else if (action === "reject-withdraw") {
+    // refund the user's balance since the request was declined
+    await updateDoc(doc(db, "users", btn.dataset.uid), { balance: increment(parseFloat(btn.dataset.amount)) });
+    await updateDoc(doc(db, "withdrawals", id), { status: "rejected" });
+    loadWithdrawals();
+  } else if (action === "approve-channel") {
+    await updateDoc(doc(db, "channelTasks", id), { status: "active" });
+    loadChannelTasks();
+  } else if (action === "reject-channel") {
+    await updateDoc(doc(db, "channelTasks", id), { status: "rejected" });
+    loadChannelTasks();
+  } else if (action === "unban") {
+    await updateDoc(doc(db, "users", id), { banned: false, banReason: "" });
+    loadBanned();
+  }
+});
+
+onAuthStateChanged(auth, (user) => {
+  document.getElementById("loginBox").classList.toggle("hidden", !!user);
+  document.getElementById("panel").classList.toggle("hidden", !user);
+  if (user) {
+    loadSettings();
+    loadSurveySubmissions();
+    loadWithdrawals();
+    loadChannelTasks();
+    loadBanned();
+  }
+});
+</script>
+</body>
+</html>

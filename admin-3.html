@@ -1,0 +1,536 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Admin panel</title>
+<style>
+  :root{
+    --bg:#0b0c10; --surface:#15161d; --surface-2:#1c1e27; --border:#262835;
+    --text:#f2f2f7; --muted:#8a8d9a; --accent:#7c6cf0; --accent-soft:rgba(124,108,240,.14);
+    --ok:#34c759; --ok-soft:rgba(52,199,89,.14);
+    --warn:#e0a72c; --warn-soft:rgba(224,167,44,.14);
+    --danger:#ff3b30; --danger-soft:rgba(255,59,48,.14);
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0; font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;
+    background:var(--bg); color:var(--text); padding-bottom:40px;
+  }
+  .topbar{
+    position:sticky; top:0; z-index:10; background:rgba(11,12,16,.92); backdrop-filter:blur(10px);
+    border-bottom:1px solid var(--border); padding:14px 16px 0;
+  }
+  .topbar h1{ font-size:17px; font-weight:700; margin:0 0 12px; display:flex; align-items:center; gap:8px; }
+  .tabs{ display:flex; gap:4px; overflow-x:auto; padding-bottom:10px; scrollbar-width:none; }
+  .tabs::-webkit-scrollbar{display:none;}
+  .tab{
+    flex:none; padding:8px 14px; border-radius:999px; font-size:12.5px; font-weight:600;
+    color:var(--muted); background:transparent; cursor:pointer; white-space:nowrap;
+    display:flex; align-items:center; gap:6px; border:1px solid transparent;
+  }
+  .tab.active{ background:var(--accent-soft); color:var(--accent); border-color:rgba(124,108,240,.3); }
+  .tab .badge{
+    background:var(--danger); color:#fff; font-size:10px; font-weight:700; border-radius:999px;
+    min-width:16px; height:16px; display:none; align-items:center; justify-content:center; padding:0 4px;
+  }
+  .tab .badge.show{ display:inline-flex; }
+
+  .page{ padding:16px; max-width:640px; margin:0 auto; }
+  .view{ display:none; }
+  .view.active{ display:block; }
+
+  .card{
+    background:var(--surface); border:1px solid var(--border); border-radius:16px;
+    padding:16px; margin-bottom:14px;
+  }
+  .card-head{ display:flex; align-items:center; gap:10px; margin-bottom:4px; }
+  .card-head .icon{
+    width:30px; height:30px; border-radius:9px; background:var(--accent-soft); color:var(--accent);
+    display:flex; align-items:center; justify-content:center; flex-shrink:0;
+  }
+  .card-head h2{ font-size:14.5px; font-weight:700; margin:0; }
+  .card-desc{ font-size:11.5px; color:var(--muted); line-height:1.5; margin:2px 0 12px 40px; }
+
+  .row{
+    display:flex; align-items:center; justify-content:space-between; gap:10px;
+    padding:10px 0; border-bottom:1px solid var(--border);
+  }
+  .row:last-child{ border-bottom:none; }
+  .row > span:first-child{ font-size:13px; }
+  .field-block{ margin-bottom:12px; }
+  .field-block label{ display:block; font-size:11px; color:var(--muted); font-weight:600; letter-spacing:.03em; margin-bottom:6px; text-transform:uppercase; }
+
+  input[type=text], input:not([type]), input[type=number], select{
+    padding:9px 10px; border-radius:10px; border:1px solid var(--border);
+    background:var(--surface-2); color:var(--text); width:110px; text-align:right; font-size:13px;
+  }
+  .field-block input, .field-block select{ width:100%; text-align:left; }
+  input:focus, select:focus{ outline:none; border-color:var(--accent); }
+  input[type=checkbox]{ width:20px; height:20px; accent-color:var(--accent); }
+
+  button{
+    border:none; border-radius:12px; padding:13px; font-weight:700; font-size:14px;
+    background:var(--accent); color:#fff; width:100%; cursor:pointer;
+  }
+  button:active{ opacity:.85; }
+  .save-bar{
+    position:sticky; bottom:0; padding:12px 16px; background:linear-gradient(to top,var(--bg) 60%,transparent);
+  }
+  .hidden{ display:none !important; }
+
+  .small-btn{
+    border:none; background:var(--surface-2); color:var(--text); padding:7px 12px; border-radius:9px;
+    font-size:11.5px; font-weight:700; width:auto; cursor:pointer;
+  }
+  .small-btn.danger{ background:var(--danger-soft); color:var(--danger); }
+  .small-btn.ok{ background:var(--ok-soft); color:var(--ok); }
+
+  .list-row{
+    display:flex; align-items:center; justify-content:space-between; gap:10px;
+    padding:11px 0; border-bottom:1px solid var(--border);
+  }
+  .list-row:last-child{ border-bottom:none; }
+  .list-row .meta{ font-size:12.5px; }
+  .list-row .meta small{ display:block; color:var(--muted); font-size:11px; margin-top:2px; }
+  .list-actions{ display:flex; gap:6px; flex-shrink:0; }
+  .empty-note{ color:var(--muted); font-size:12.5px; padding:6px 0; }
+
+  .status-pill{ font-size:11px; font-weight:700; padding:3px 9px; border-radius:999px; }
+  .status-paid{ background:var(--ok-soft); color:var(--ok); }
+  .status-pending{ background:var(--warn-soft); color:var(--warn); }
+  .status-rejected{ background:var(--danger-soft); color:var(--danger); }
+
+  .stat-grid{ display:grid; grid-template-columns:repeat(2,1fr); gap:10px; }
+  .stat-box{ background:var(--surface-2); border:1px solid var(--border); border-radius:14px; padding:14px; }
+  .stat-box b{ display:block; font-size:21px; font-weight:800; }
+  .stat-box span{ font-size:11px; color:var(--muted); }
+
+  .section-title{ font-size:11px; font-weight:700; color:var(--muted); text-transform:uppercase; letter-spacing:.04em; margin:22px 0 10px 2px; }
+  .section-title:first-child{ margin-top:0; }
+</style>
+</head>
+<body>
+
+<div id="loginBox" class="page" style="max-width:360px;padding-top:60px;">
+  <div class="card">
+    <div class="card-head">
+      <div class="icon"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="10" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg></div>
+      <h2>Admin login</h2>
+    </div>
+    <div class="field-block"><input id="email" placeholder="Email" /></div>
+    <div class="field-block"><input id="pass" type="password" placeholder="Password" /></div>
+    <button id="loginBtn">Log in</button>
+  </div>
+</div>
+
+<div id="panel" class="hidden">
+  <div class="topbar">
+    <h1>
+      <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+      Admin panel
+    </h1>
+    <div class="tabs">
+      <div class="tab active" data-tab="overview">Overview</div>
+      <div class="tab" data-tab="settings">Settings</div>
+      <div class="tab" data-tab="approvals">Approvals <span class="badge" id="approvalsBadge">0</span></div>
+      <div class="tab" data-tab="users">Users</div>
+    </div>
+  </div>
+
+  <div class="page">
+
+    <!-- ================= OVERVIEW ================= -->
+    <div class="view active" id="view-overview">
+      <div class="card">
+        <div class="card-head">
+          <div class="icon"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18M7 15l4-6 4 3 5-8"/></svg></div>
+          <h2>At a glance</h2>
+        </div>
+        <div class="stat-grid" id="overviewGrid">Loading...</div>
+      </div>
+
+      <div class="card">
+        <div class="card-head">
+          <div class="icon"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 8v4l3 3"/><circle cx="12" cy="12" r="9"/></svg></div>
+          <h2>Recent withdrawal requests</h2>
+        </div>
+        <div class="card-desc">Last 20 requests, any status.</div>
+        <div id="withdrawHistoryList">Loading...</div>
+      </div>
+    </div>
+
+    <!-- ================= SETTINGS ================= -->
+    <div class="view" id="view-settings">
+
+      <div class="card">
+        <div class="card-head">
+          <div class="icon"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1v6M12 17v6M4.2 4.2l4.2 4.2M15.5 15.5l4.2 4.2M1 12h6M17 12h6M4.2 19.8l4.2-4.2M15.5 8.5l4.2-4.2"/></svg></div>
+          <h2>Reward per task (USDT)</h2>
+        </div>
+        <div class="row"><span>Watch ad</span><input id="adReward" /></div>
+        <div class="row"><span>Survey</span><input id="surveyReward" /></div>
+        <div class="row"><span>Math challenge</span><input id="mathReward" /></div>
+        <div class="row"><span>Quiz</span><input id="quizReward" /></div>
+        <div class="row"><span>Referral bonus</span><input id="referralBonus" /></div>
+        <div class="row"><span>Minimum withdraw</span><input id="minWithdraw" /></div>
+      </div>
+
+      <div class="card">
+        <div class="card-head">
+          <div class="icon"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg></div>
+          <h2>Daily limits</h2>
+        </div>
+        <div class="row"><span>Ads per day</span><input id="dailyAdLimit" /></div>
+        <div class="row"><span>Spins per day</span><input id="dailySpinLimit" /></div>
+        <div class="row"><span>Scratch cards per day</span><input id="dailyScratchLimit" /></div>
+        <div class="row"><span>Surveys per day</span><input id="dailySurveyLimit" /></div>
+        <div class="row"><span>Quiz per day</span><input id="dailyQuizLimit" /></div>
+      </div>
+
+      <div class="card">
+        <div class="card-head">
+          <div class="icon"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 12l2 2 4-4"/><circle cx="12" cy="12" r="9"/></svg></div>
+          <h2>Withdraw requirements</h2>
+        </div>
+        <div class="row"><span>Ads required</span><input id="reqAds" /></div>
+        <div class="row"><span>Surveys required</span><input id="reqSurveys" /></div>
+        <div class="row"><span>Quiz answers required</span><input id="reqQuiz" /></div>
+      </div>
+
+      <div class="card">
+        <div class="card-head">
+          <div class="icon"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M2 10h20M6 15h4"/></svg></div>
+          <h2>Ad networks</h2>
+        </div>
+        <div class="field-block">
+          <label>Monetag zone ID</label>
+          <input id="monetagZoneId" placeholder="e.g. 123456" />
+        </div>
+        <div class="card-desc" style="margin-left:0;">From Monetag dashboard → your app → Zone ID. Rewarded ads and the auto popup ad both use this automatically.</div>
+        <div class="field-block">
+          <label>Survey link (Adsterra / GigaPub)</label>
+          <input id="surveyLink" placeholder="https://..." />
+        </div>
+        <div class="card-desc" style="margin-left:0;">Opened from the Survey page. Swap it any time.</div>
+        <div class="row"><span>Auto ad popup interval (sec)</span><input id="autoAdIntervalSec" /></div>
+      </div>
+
+      <div class="card">
+        <div class="card-head">
+          <div class="icon"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg></div>
+          <h2>Bot</h2>
+        </div>
+        <div class="field-block">
+          <label>Bot username (no @)</label>
+          <input id="botUsername" placeholder="yourbotname" />
+        </div>
+        <div class="card-desc" style="margin-left:0;">Used to build each user's referral link (t.me/yourbotname?start=...) on the Refer page.</div>
+      </div>
+
+      <div class="card">
+        <div class="card-head">
+          <div class="icon"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 12h8M12 8v8"/><circle cx="12" cy="12" r="9"/></svg></div>
+          <h2>Channel-join tasks</h2>
+        </div>
+        <div class="row"><span>Minimum reward per join</span><input id="minChannelTaskReward" /></div>
+        <div class="field-block" style="margin-top:12px;">
+          <label>Cloud Function URL</label>
+          <input id="cloudFunctionUrl" placeholder="https://your-repl-name.username.repl.co" />
+        </div>
+        <div class="card-desc" style="margin-left:0;">Your verify server (Replit) URL - confirms real channel joins.</div>
+      </div>
+
+      <div class="card">
+        <div class="card-head">
+          <div class="icon"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="11" width="16" height="9" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4M12 15v2"/></svg></div>
+          <h2>Anti multi-account device check</h2>
+        </div>
+        <div class="row"><span>Check device at withdraw time</span><input type="checkbox" id="deviceCheckEnabled" /></div>
+        <div class="card-desc" style="margin-left:0;margin-top:8px;">Off by default. When on, accounts sharing a device at withdraw time all get banned automatically.</div>
+      </div>
+
+      <div class="card">
+        <div class="card-head">
+          <div class="icon"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H7a4 4 0 0 0-4 4v2"/><circle cx="9.5" cy="7" r="4"/><path d="M17 11a4 4 0 1 0-1-7.9"/></svg></div>
+          <h2>Referral - required channels</h2>
+        </div>
+        <div class="card-desc" style="margin-left:0;">Leave all 3 blank to pay referral bonuses instantly. Fill them in and the new user must verify joining all 3 before their referrer gets paid.</div>
+        <div class="field-block"><label>Channel 1</label><input id="refReqUsername1" placeholder="channelusername" style="margin-bottom:6px;" /><input id="refReqLink1" placeholder="https://t.me/channelusername" /></div>
+        <div class="field-block"><label>Channel 2</label><input id="refReqUsername2" placeholder="channelusername" style="margin-bottom:6px;" /><input id="refReqLink2" placeholder="https://t.me/channelusername" /></div>
+        <div class="field-block"><label>Channel 3</label><input id="refReqUsername3" placeholder="channelusername" style="margin-bottom:6px;" /><input id="refReqLink3" placeholder="https://t.me/channelusername" /></div>
+      </div>
+
+      <div class="save-bar"><button id="saveBtn">Save settings</button></div>
+    </div>
+
+    <!-- ================= APPROVALS ================= -->
+    <div class="view" id="view-approvals">
+      <div class="section-title">Survey submissions</div>
+      <div class="card">
+        <div id="surveyList">Loading...</div>
+      </div>
+
+      <div class="section-title">Channel tasks (external payment)</div>
+      <div class="card">
+        <div id="channelTaskList">Loading...</div>
+      </div>
+
+      <div class="section-title">Withdrawals</div>
+      <div class="card">
+        <div id="withdrawList">Loading...</div>
+      </div>
+    </div>
+
+    <!-- ================= USERS ================= -->
+    <div class="view" id="view-users">
+      <div class="card">
+        <div class="card-head">
+          <div class="icon"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 3.5-7 8-7s8 3 8 7"/><path d="m4.9 4.9 14.2 14.2"/></svg></div>
+          <h2>Banned accounts</h2>
+        </div>
+        <div id="bannedList">Loading...</div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-app.js";
+import {
+  getAuth, signInWithEmailAndPassword, onAuthStateChanged
+} from "https://www.gstatic.com/firebasejs/10.13.0/firebase-auth.js";
+import {
+  getFirestore, doc, getDoc, setDoc, updateDoc, increment,
+  collection, query, where, getDocs, orderBy, limit
+} from "https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js";
+
+// Same Firebase project as index.html
+const firebaseConfig = {
+  apiKey: "AIzaSyAwa8-kqkxSLt0d0Dj697rUw1L0GpL4COI",
+  authDomain: "smart-earning-23b42.firebaseapp.com",
+  projectId: "smart-earning-23b42",
+  storageBucket: "smart-earning-23b42.firebasestorage.app",
+  messagingSenderId: "45425574806",
+  appId: "1:45425574806:web:a6f1268dd4fe6da4aa53b7"
+};
+
+const app = initializeApp(firebaseConfig);
+const auth = getAuth(app);
+const db = getFirestore(app);
+
+document.getElementById("loginBtn").addEventListener("click", async () => {
+  try {
+    await signInWithEmailAndPassword(auth, document.getElementById("email").value, document.getElementById("pass").value);
+  } catch (e) {
+    alert("Login failed: " + e.message);
+  }
+});
+
+const fields = ["adReward","surveyReward","mathReward","quizReward","referralBonus","minWithdraw",
+  "dailyAdLimit","dailySpinLimit","dailyScratchLimit","dailySurveyLimit","dailyQuizLimit",
+  "surveyLink","autoAdIntervalSec","monetagZoneId","minChannelTaskReward","cloudFunctionUrl","botUsername"];
+const textFields = ["surveyLink","monetagZoneId","cloudFunctionUrl","botUsername"]; // saved as plain strings, not numbers
+
+async function loadSettings() {
+  const snap = await getDoc(doc(db, "config", "settings"));
+  const cfg = snap.exists() ? snap.data() : {};
+  fields.forEach(f => { if (cfg[f] !== undefined) document.getElementById(f).value = cfg[f]; });
+  document.getElementById("deviceCheckEnabled").checked = !!cfg.deviceCheckEnabled;
+  const gate = cfg.referralRequiredChannels || [];
+  [1, 2, 3].forEach(i => {
+    document.getElementById("refReqUsername" + i).value = gate[i - 1]?.username || "";
+    document.getElementById("refReqLink" + i).value = gate[i - 1]?.link || "";
+  });
+  const req = cfg.withdrawRequiredTasks || {};
+  document.getElementById("reqAds").value = req.ads ?? 5;
+  document.getElementById("reqSurveys").value = req.surveys ?? 1;
+  document.getElementById("reqQuiz").value = req.quiz ?? 3;
+}
+
+document.getElementById("saveBtn").addEventListener("click", async () => {
+  const data = {};
+  fields.forEach(f => {
+    const el = document.getElementById(f);
+    data[f] = textFields.includes(f) ? el.value : parseFloat(el.value);
+  });
+  data.deviceCheckEnabled = document.getElementById("deviceCheckEnabled").checked;
+  data.referralRequiredChannels = [1, 2, 3]
+    .map(i => ({
+      username: document.getElementById("refReqUsername" + i).value.trim().replace(/^@/, ""),
+      link: document.getElementById("refReqLink" + i).value.trim()
+    }))
+    .filter(c => c.username && c.link);
+  data.withdrawRequiredTasks = {
+    ads: parseInt(document.getElementById("reqAds").value),
+    surveys: parseInt(document.getElementById("reqSurveys").value),
+    quiz: parseInt(document.getElementById("reqQuiz").value),
+    checkin: true
+  };
+  await setDoc(doc(db, "config", "settings"), data, { merge: true });
+  alert("Settings saved.");
+});
+
+async function loadSurveySubmissions() {
+  const q = query(collection(db, "surveySubmissions"), where("status", "==", "pending"));
+  const snap = await getDocs(q);
+  const el = document.getElementById("surveyList");
+  if (snap.empty) { el.innerHTML = "<p style='color:#999;'>None pending.</p>"; return; }
+  el.innerHTML = snap.docs.map(d => {
+    const s = d.data();
+    return `<div class="row"><span>${s.telegramId} - ${s.accountNumber}</span>
+      <span>
+        <button class="small-btn" data-id="${d.id}" data-action="approve-survey">Approve</button>
+        <button class="small-btn" data-id="${d.id}" data-action="reject-survey">Reject</button>
+      </span></div>`;
+  }).join("");
+}
+
+async function loadWithdrawals() {
+  const q = query(collection(db, "withdrawals"), where("status", "==", "pending"));
+  const snap = await getDocs(q);
+  const el = document.getElementById("withdrawList");
+  if (snap.empty) { el.innerHTML = "<p style='color:#999;'>None pending.</p>"; return; }
+  el.innerHTML = snap.docs.map(d => {
+    const w = d.data();
+    return `<div class="row"><span>${w.telegramId} - ${w.amount} USDT (${w.method}: ${w.account})</span>
+      <span>
+        <button class="small-btn" data-id="${d.id}" data-action="approve-withdraw">Paid</button>
+        <button class="small-btn" data-id="${d.id}" data-action="reject-withdraw" data-amount="${w.amount}" data-uid="${w.telegramId}">Reject</button>
+      </span></div>`;
+  }).join("");
+}
+
+async function loadChannelTasks() {
+  const q = query(collection(db, "channelTasks"), where("status", "==", "pending_payment"));
+  const snap = await getDocs(q);
+  const el = document.getElementById("channelTaskList");
+  if (snap.empty) { el.innerHTML = "<p style='color:#999;'>None pending.</p>"; return; }
+  el.innerHTML = snap.docs.map(d => {
+    const t = d.data();
+    return `<div class="row"><span>${t.channelUsername} - owner ${t.ownerUid} - ${t.rewardPerJoin} x ${t.joinsRemaining} joins</span>
+      <span>
+        <button class="small-btn" data-id="${d.id}" data-action="approve-channel">Activate</button>
+        <button class="small-btn" data-id="${d.id}" data-action="reject-channel">Reject</button>
+      </span></div>`;
+  }).join("");
+}
+
+async function loadBanned() {
+  const q = query(collection(db, "users"), where("banned", "==", true));
+  const snap = await getDocs(q);
+  const el = document.getElementById("bannedList");
+  if (snap.empty) { el.innerHTML = "<p style='color:#999;'>No banned accounts.</p>"; return; }
+  el.innerHTML = snap.docs.map(d => {
+    const u = d.data();
+    return `<div class="row"><span>${u.telegramId} - ${u.firstName || ""} (${u.banReason || "banned"})</span>
+      <button class="small-btn" data-id="${d.id}" data-action="unban">Unban</button></div>`;
+  }).join("");
+}
+
+document.addEventListener("click", async (e) => {
+  const btn = e.target.closest("button[data-action]");
+  if (!btn) return;
+  const action = btn.dataset.action;
+  const id = btn.dataset.id;
+  if (action === "approve-survey") {
+    await updateDoc(doc(db, "surveySubmissions", id), { status: "approved" });
+    loadSurveySubmissions();
+  } else if (action === "reject-survey") {
+    await updateDoc(doc(db, "surveySubmissions", id), { status: "rejected" });
+    loadSurveySubmissions();
+  } else if (action === "approve-withdraw") {
+    await updateDoc(doc(db, "withdrawals", id), { status: "paid" });
+    loadWithdrawals();
+    loadWithdrawHistory();
+    loadOverview();
+  } else if (action === "reject-withdraw") {
+    // refund the user's balance since the request was declined
+    await updateDoc(doc(db, "users", btn.dataset.uid), { balance: increment(parseFloat(btn.dataset.amount)) });
+    await updateDoc(doc(db, "withdrawals", id), { status: "rejected" });
+    loadWithdrawals();
+    loadWithdrawHistory();
+    loadOverview();
+  } else if (action === "approve-channel") {
+    await updateDoc(doc(db, "channelTasks", id), { status: "active" });
+    loadChannelTasks();
+  } else if (action === "reject-channel") {
+    await updateDoc(doc(db, "channelTasks", id), { status: "rejected" });
+    loadChannelTasks();
+  } else if (action === "unban") {
+    await updateDoc(doc(db, "users", id), { banned: false, banReason: "" });
+    loadBanned();
+  }
+});
+
+async function loadOverview() {
+  const grid = document.getElementById("overviewGrid");
+  try {
+    const [usersSnap, bannedSnap, paidSnap, pendingSnap, channelSnap] = await Promise.all([
+      getDocs(collection(db, "users")),
+      getDocs(query(collection(db, "users"), where("banned", "==", true))),
+      getDocs(query(collection(db, "withdrawals"), where("status", "==", "paid"))),
+      getDocs(query(collection(db, "withdrawals"), where("status", "==", "pending"))),
+      getDocs(query(collection(db, "channelTasks"), where("status", "==", "active")))
+    ]);
+
+    const sum = (snap) => snap.docs.reduce((s, d) => s + (Number(d.data().amount) || 0), 0);
+    const totalUsers = usersSnap.size;
+    const activeUsers = totalUsers - bannedSnap.size;
+    const paidCount = paidSnap.size, paidTotal = sum(paidSnap);
+    const pendingCount = pendingSnap.size, pendingTotal = sum(pendingSnap);
+    const channelDeposits = channelSnap.docs.reduce((s, d) => {
+      const t = d.data();
+      return s + (Number(t.rewardPerJoin) || 0) * (Number(t.joinsRemaining) || 0);
+    }, 0);
+
+    grid.innerHTML = `
+      <div class="stat-box"><b>${totalUsers}</b><span>Total users</span></div>
+      <div class="stat-box"><b>${activeUsers}</b><span>Active (not banned)</span></div>
+      <div class="stat-box"><b>${bannedSnap.size}</b><span>Banned users</span></div>
+      <div class="stat-box"><b>${paidCount}</b><span>Withdrawals paid</span></div>
+      <div class="stat-box"><b>${paidTotal.toFixed(3)}</b><span>USDT paid out (total)</span></div>
+      <div class="stat-box"><b>${pendingCount}</b><span>Pending withdrawals</span></div>
+      <div class="stat-box"><b>${pendingTotal.toFixed(3)}</b><span>USDT pending payout</span></div>
+      <div class="stat-box"><b>${channelDeposits.toFixed(3)}</b><span>USDT locked in active channel tasks</span></div>
+    `;
+  } catch (e) {
+    console.error(e);
+    grid.innerHTML = "<p style='color:#999;grid-column:1/-1;'>Couldn't load overview.</p>";
+  }
+}
+
+async function loadWithdrawHistory() {
+  const el = document.getElementById("withdrawHistoryList");
+  try {
+    const q = query(collection(db, "withdrawals"), orderBy("requestedAt", "desc"), limit(20));
+    const snap = await getDocs(q);
+    if (snap.empty) { el.innerHTML = "<p style='color:#999;'>No withdrawal requests yet.</p>"; return; }
+    const colorFor = (s) => s === "paid" ? "#34c759" : s === "rejected" ? "#ff3b30" : "#e0a72c";
+    el.innerHTML = snap.docs.map(d => {
+      const w = d.data();
+      return `<div class="row"><span>${w.telegramId} - ${w.amount} USDT (${w.method})</span><span style="color:${colorFor(w.status)};font-weight:700;">${w.status}</span></div>`;
+    }).join("");
+  } catch (e) {
+    console.error(e);
+    el.innerHTML = "<p style='color:#999;'>Couldn't load history.</p>";
+  }
+}
+
+onAuthStateChanged(auth, (user) => {
+  document.getElementById("loginBox").classList.toggle("hidden", !!user);
+  document.getElementById("panel").classList.toggle("hidden", !user);
+  if (user) {
+    loadOverview();
+    loadSettings();
+    loadSurveySubmissions();
+    loadWithdrawals();
+    loadWithdrawHistory();
+    loadChannelTasks();
+    loadBanned();
+  }
+});
+</script>
+</body>
+</html>
